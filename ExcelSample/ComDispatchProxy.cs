@@ -19,7 +19,44 @@ public class ComDispatchProxy<T> : DispatchProxy, IDisposable where T : class
 
     protected override object? Invoke(MethodInfo? method, object?[]? args)
     {
-        return method.Invoke(_comObject, args);
+        // メソッドを実行して戻り値を取得
+        var result = method.Invoke(_comObject, args);
+
+        // 戻り値が null の場合
+        if (result == null)
+        {
+            return null;
+        }
+
+        // COM オブジェクトの場合、型情報を使ってプロキシを生成
+        if (Marshal.IsComObject(result))
+        {
+            return WrapComObjectWithProxy(method, result);
+        }
+
+        // 戻り値が COM オブジェクトでない場合
+        return result;
+    }
+
+    private object WrapComObjectWithProxy(MethodInfo? method, object? result)
+    {
+        switch (result)
+        {
+            case Excel.Application app: return WrapProxy(app);
+            case Excel.Workbooks wbs: return WrapProxy(wbs);
+            case Excel.Workbook wb: return WrapProxy(wb);
+            case Excel.Sheets wss: return WrapProxy(wss);
+            case Excel.Worksheet ws: return WrapProxy(ws);
+            case Excel.Range range: return WrapProxy(range);
+        }
+
+        return result; // 型が異なる場合はそのまま返す
+
+        static ComDispatchProxy<TCom> WrapProxy<TCom>(TCom comObject) where TCom : class
+        {
+            return ComDispatchProxy<TCom>.CreateProxy(comObject) as ComDispatchProxy<TCom>;
+        }
+
     }
 
     public static ComDispatchProxy<T> CreateProxy(T comObject)

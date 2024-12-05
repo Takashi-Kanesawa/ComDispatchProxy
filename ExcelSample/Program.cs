@@ -1,12 +1,12 @@
 ﻿using Excel = Microsoft.Office.Interop.Excel;
 
 using (var excelApp = ComDispatchProxy<Excel.Application>.CreateProxy(new Excel.Application()))
-using (var wbs = ComDispatchProxy<Excel.Workbooks>.CreateProxy(excelApp?.Proxy.Workbooks))
-using (var wb = ComDispatchProxy<Excel.Workbook>.CreateProxy(wbs?.Proxy.Add()))
-using (var wss = ComDispatchProxy<Excel.Sheets>.CreateProxy(wb?.Proxy.Sheets))
-using (var ws = ComDispatchProxy<Excel.Worksheet>.CreateProxy(wss?.Proxy[1] as Excel.Worksheet))
-using (var targetRange = ComDispatchProxy<Excel.Range>.CreateProxy(ws?.Proxy.Range["A1:A10"]))
-using (var columns = ComDispatchProxy<Excel.Range>.CreateProxy(targetRange?.Proxy.Columns))
+using (var wbs = excelApp?.Proxy.Workbooks as ComDispatchProxy<Excel.Workbooks>)
+using (var wb = wbs?.Proxy.Add() as ComDispatchProxy<Excel.Workbook>)
+using (var wss = wb?.Proxy.Sheets as ComDispatchProxy<Excel.Sheets>)
+using (var ws = wss?.Proxy[1] as ComDispatchProxy<Excel.Worksheet>)
+using (var targetRange = ws?.Proxy.Range["A1:A10"] as ComDispatchProxy<Excel.Range>)
+using (var columns = targetRange?.Proxy.Columns as ComDispatchProxy<Excel.Range>)
 
 if (excelApp is not null && targetRange is not null && columns is not null)
 {
