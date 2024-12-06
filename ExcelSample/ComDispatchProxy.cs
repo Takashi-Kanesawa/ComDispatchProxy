@@ -5,11 +5,50 @@ using Excel = Microsoft.Office.Interop.Excel;
 
 public class ComDispatchProxy<T> : DispatchProxy, IDisposable where T : class 
 {
+    private static readonly Dictionary<ComDispatchProxy<T>, string> _instances = new();
+
     private T _comObject;
     private string _objectName;
     private T _validProxy;
 
     public T Proxy => this._validProxy;
+
+    public ComDispatchProxy()
+    {
+        lock (_instances)
+        {
+            _instances.Add(this, filterStackTrace(Environment.StackTrace));
+
+	        string filterStackTrace(string stackTrace)
+	        {
+	            Regex[] includesRegex = { new Regex(@"cs:line \d+$") };
+	
+	            // StackTraceを行ごとに分割し、フィルタリング
+	            var filteredStackTrace = string.Join(Environment.NewLine, stackTrace
+	                .Split(new[] { Environment.NewLine }, StringSplitOptions.None)
+	                .Where(line =>
+	                    includesRegex.Any(regex => regex.IsMatch(line)) &&
+	                    line.StartsWith("   at ComDispatchProxy`") == false));
+	
+	            return filteredStackTrace;
+	        }
+        }
+
+        AppDomain.CurrentDomain.ProcessExit += (sender, e) =>
+        {
+            if (_instances.Count > 0)
+            {
+                Console.WriteLine($"[WARNING] Application exiting. Some COM objects were not released properly:");
+                foreach (var instanceInfo in _instances)
+                {
+                    Console.WriteLine($" - {instanceInfo.Key._objectName}");
+                    Console.WriteLine($"{instanceInfo.Value}");
+                    instanceInfo.Key.Dispose();
+                }
+            }
+        };
+
+    }
 
     public void Initialize(ComDispatchProxy<T> creatingProxy, T comObject)
     {
@@ -89,6 +128,11 @@ public class ComDispatchProxy<T> : DispatchProxy, IDisposable where T : class
 
     protected virtual void Dispose(bool disposing)
     {
+        lock (_instances)
+        {
+            _instances.Remove(this);
+        }
+
         if (_comObject != null && Marshal.IsComObject(_comObject))
         {
 #pragma warning disable CA1416 // OS プラットフォームの互換性の警告を無視
