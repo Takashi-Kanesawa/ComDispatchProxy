@@ -3,28 +3,43 @@ using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using Excel = Microsoft.Office.Interop.Excel;
 
-public class ComDispatchProxy<T> : DispatchProxy, IDisposable where T : class 
+/// <summary>
+/// COMオブジェクトのプロキシを作成し、メソッド呼び出しを中継するためのクラス。
+/// </summary>
+/// <typeparam name="T">プロキシ化するCOMオブジェクトの型。</typeparam>
+public class ComDispatchProxy<T> : DispatchProxy, IDisposable where T : class
 {
+    // 現在のプロキシインスタンスとそれに関連する情報を保持する辞書
     private static readonly Dictionary<ComDispatchProxy<T>, string> _instances = new();
 
+    // COMオブジェクト、オブジェクト名、有効なプロキシをLazyで保持
     private Lazy<T> _comObject;
     private Lazy<string> _objectName;
     private Lazy<T> _validProxy;
 
+    /// <summary>
+    /// プロキシ化されたオブジェクトを取得します。
+    /// </summary>
     public T Proxy { get => this._validProxy.Value; }
 
+    /// <summary>
+    /// コンストラクタ。プロキシの初期化処理を行います。
+    /// </summary>
     public ComDispatchProxy()
     {
         lock (_instances)
         {
             _instances.Add(this, filterStackTrace(Environment.StackTrace));
         }
+
 #if DEBUG
+        // アプリケーション終了時の未解放オブジェクトを警告
         AppDomain.CurrentDomain.ProcessExit += (sender, e) =>
         {
             HandleApplicationExit("ProcessExit");
         };
 
+        // 未処理例外発生時のハンドリング
         AppDomain.CurrentDomain.UnhandledException += (sender, e) =>
         {
             Console.WriteLine("[ERROR] Unhandled exception occurred.");
@@ -35,11 +50,12 @@ public class ComDispatchProxy<T> : DispatchProxy, IDisposable where T : class
             HandleApplicationExit("UnhandledException");
         };
 
+        // スタックトレースのフィルタリングメソッド
         string filterStackTrace(string stackTrace)
         {
             Regex[] includesRegex = { new Regex(@"cs:line \d+$") };
 
-            // StackTraceを行ごとに分割し、フィルタリング
+            // スタックトレースの行ごとにフィルタリング
             var filteredStackTrace = string.Join(Environment.NewLine, stackTrace
                 .Split(new[] { Environment.NewLine }, StringSplitOptions.None)
                 .Where(line =>
@@ -49,6 +65,7 @@ public class ComDispatchProxy<T> : DispatchProxy, IDisposable where T : class
             return filteredStackTrace;
         }
 
+        // アプリケーション終了時のハンドリング
         static void HandleApplicationExit(string reason)
         {
             if (_instances.Count > 0)
@@ -64,11 +81,15 @@ public class ComDispatchProxy<T> : DispatchProxy, IDisposable where T : class
         }
 #endif
 
+        // Lazyのデフォルト初期化
         this._comObject = new Lazy<T>(() => throw new InvalidOperationException("COM Object is not initialized."));
         this._objectName = new Lazy<string>(() => throw new InvalidOperationException("Object name is not initialized."));
         this._validProxy = new Lazy<T>(() => throw new InvalidOperationException("COM Object is not initialized."));
     }
 
+    /// <summary>
+    /// プロキシを初期化します。
+    /// </summary>
     public void Initialize(ComDispatchProxy<T> creatingProxy, T comObject)
     {
         if (creatingProxy == null)
@@ -85,6 +106,9 @@ public class ComDispatchProxy<T> : DispatchProxy, IDisposable where T : class
         this._validProxy = new Lazy<T>(() => validProxy ?? throw new ArgumentNullException(nameof(validProxy)));
     }
 
+    /// <summary>
+    /// メソッド呼び出しを中継します。
+    /// </summary>
     protected override object? Invoke(MethodInfo? method, object?[]? args)
     {
         if (method == null)
@@ -97,24 +121,22 @@ public class ComDispatchProxy<T> : DispatchProxy, IDisposable where T : class
 
         try
         {
-            // メソッドを実行して戻り値を取得
+            // 実際のメソッドを呼び出し、その結果を取得
             var result = method.Invoke(_comObject.Value, args);
 
-            // 戻り値が null の場合
             if (result == null)
             {
                 Console.WriteLine($"[LOG] Method '{method.Name}' returned null.");
                 return null;
             }
 
-            // COM オブジェクトの場合、型情報を使ってプロキシを生成
+            // COMオブジェクトの場合、適切なプロキシを生成
             if (Marshal.IsComObject(result))
             {
                 return ProxyFactory(method, result);
             }
 
-            // 戻り値が COM オブジェクトでない場合
-            return result;
+            return result; // 通常の戻り値を返す
         }
         catch (TargetInvocationException ex)
         {
@@ -126,7 +148,8 @@ public class ComDispatchProxy<T> : DispatchProxy, IDisposable where T : class
             Console.WriteLine($"[ERROR] Exception in '{method.Name}': {ex.Message}");
             throw;
         }
-        
+
+        // 引数のフォーマット処理
         string FormatArgs(object?[]? args)
         {
             if (args == null || args.Length == 0)
@@ -135,16 +158,17 @@ public class ComDispatchProxy<T> : DispatchProxy, IDisposable where T : class
         }
     }
 
+    /// <summary>
+    /// COMオブジェクトに基づいて適切なプロキシを生成します。
+    /// </summary>
     private object ProxyFactory(MethodInfo? method, object result)
     {
-        if ( method is null || result is null )
+        if (method is null || result is null)
         {
             throw new ArgumentNullException($"{nameof(method)} or {nameof(result)} is null.");
         }
 
-        // 型を確認し適切にキャスト
-        var typeName = result.GetType().Name;
-
+        // 型ごとにプロキシを生成
         switch (result)
         {
             case Excel.Application app: return WrapProxy(app);
@@ -158,16 +182,18 @@ public class ComDispatchProxy<T> : DispatchProxy, IDisposable where T : class
         }
 
         Console.WriteLine($"[LOG] Can't create proxy for {_objectName.Value}.{method.Name}");
-        return result; // 型が異なる場合はそのまま返す
+        return result; // 型が一致しない場合そのまま返す
 
         ComDispatchProxy<TCom> WrapProxy<TCom>(TCom comObject) where TCom : class
         {
             Console.WriteLine($"[LOG] Wrapping returned COM object from '{method.Name}' as '{typeof(TCom)}'.");
             return ComDispatchProxy<TCom>.CreateProxy(comObject) as ComDispatchProxy<TCom>;
         }
-
     }
 
+    /// <summary>
+    /// 新しいプロキシを生成します。
+    /// </summary>
     public static ComDispatchProxy<T> CreateProxy(T comObject)
     {
         if (comObject == null)
@@ -187,10 +213,13 @@ public class ComDispatchProxy<T> : DispatchProxy, IDisposable where T : class
         return proxy;
     }
 
+    /// <summary>
+    /// プロキシを解放し、関連リソースを破棄します。
+    /// </summary>
     public void Dispose()
     {
         Dispose(true);
-        GC.SuppressFinalize(this); // デストラクタをスキップする
+        GC.SuppressFinalize(this); // デストラクタをスキップ
     }
 
     protected virtual void Dispose(bool disposing)
@@ -202,17 +231,17 @@ public class ComDispatchProxy<T> : DispatchProxy, IDisposable where T : class
 
         if (_comObject.Value != null && Marshal.IsComObject(_comObject.Value))
         {
-#pragma warning disable CA1416 // OS プラットフォームの互換性の警告を無視
+#pragma warning disable CA1416 // OS互換性警告を無視
             Marshal.ReleaseComObject(_comObject.Value);
 #pragma warning restore CA1416
         }
-
     }
 
+    /// <summary>
+    /// デストラクタ。Disposeを呼び出してリソースを解放します。
+    /// </summary>
     ~ComDispatchProxy()
     {
-        Dispose(false); // ファイナライザから呼び出される場合
+        Dispose(false); // ファイナライザから呼び出し
     }
-
 }
-
