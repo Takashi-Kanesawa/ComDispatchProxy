@@ -75,7 +75,7 @@ public class ComDispatchProxy<T> : DispatchProxy, IDisposable where T : class
         // COM オブジェクトの場合、型情報を使ってプロキシを生成
         if (Marshal.IsComObject(result))
         {
-            return WrapComObjectWithProxy(method, result);
+            return ProxyFactory(method, result);
         }
 
         // 戻り値が COM オブジェクトでない場合
@@ -90,7 +90,7 @@ public class ComDispatchProxy<T> : DispatchProxy, IDisposable where T : class
         }
     }
 
-    private object WrapComObjectWithProxy(MethodInfo? method, object? result)
+    private object ProxyFactory(MethodInfo? method, object result)
     {
         switch (result)
         {
@@ -100,6 +100,8 @@ public class ComDispatchProxy<T> : DispatchProxy, IDisposable where T : class
             case Excel.Sheets wss: return WrapProxy(wss);
             case Excel.Worksheet ws: return WrapProxy(ws);
             case Excel.Range range: return WrapProxy(range);
+            case Excel.Windows wins: return WrapProxy(wins);
+            case Excel.Window win: return WrapProxy(win);
         }
 
         Console.WriteLine($"[LOG] Can't create proxy for {_objectName}.{method.Name}");
