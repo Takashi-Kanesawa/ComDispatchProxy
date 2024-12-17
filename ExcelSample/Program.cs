@@ -4,7 +4,7 @@
 using (var excelApp = ComDispatchProxy<Excel.Application>.CreateProxy(new Excel.Application()))
 
 // 個別のオブジェクトは、暗黙的に呼び出されるCOMインターフェイスもあるため、Proxy経由で取得する
-using (var wbs = excelApp?.Proxy.Workbooks as ComDispatchProxy<Excel.Workbooks>)
+using (var wbs = excelApp.Proxy.Workbooks as ComDispatchProxy<Excel.Workbooks>)
 using (var wb = wbs?.Proxy.Add() as ComDispatchProxy<Excel.Workbook>)
 using (var wss = wb?.Proxy.Worksheets as ComDispatchProxy<Excel.Sheets>)
 using (var ws = wss?.Proxy[1] as ComDispatchProxy<Excel.Worksheet>)
