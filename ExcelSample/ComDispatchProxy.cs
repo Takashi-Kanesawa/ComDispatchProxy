@@ -32,7 +32,21 @@ public class ComDispatchProxy<T> : DispatchProxy, IDisposable where T : class
             _instances.Add(this, filterStackTrace(Environment.StackTrace));
         }
 
-#if DEBUG
+        // スタックトレースのフィルタリングメソッド
+        string filterStackTrace(string stackTrace)
+        {
+            Regex[] includesRegex = { new Regex(@"cs:line \d+$") };
+
+            // スタックトレースの行ごとにフィルタリング
+            var filteredStackTrace = string.Join(Environment.NewLine, stackTrace
+                .Split(new[] { Environment.NewLine }, StringSplitOptions.None)
+                .Where(line =>
+                    includesRegex.Any(regex => regex.IsMatch(line)) &&
+                    line.StartsWith("   at ComDispatchProxy`") == false));
+
+            return filteredStackTrace;
+        }
+
         // アプリケーション終了時の未解放オブジェクトを警告
         AppDomain.CurrentDomain.ProcessExit += (sender, e) =>
         {
@@ -50,21 +64,6 @@ public class ComDispatchProxy<T> : DispatchProxy, IDisposable where T : class
             HandleApplicationExit("UnhandledException");
         };
 
-        // スタックトレースのフィルタリングメソッド
-        string filterStackTrace(string stackTrace)
-        {
-            Regex[] includesRegex = { new Regex(@"cs:line \d+$") };
-
-            // スタックトレースの行ごとにフィルタリング
-            var filteredStackTrace = string.Join(Environment.NewLine, stackTrace
-                .Split(new[] { Environment.NewLine }, StringSplitOptions.None)
-                .Where(line =>
-                    includesRegex.Any(regex => regex.IsMatch(line)) &&
-                    line.StartsWith("   at ComDispatchProxy`") == false));
-
-            return filteredStackTrace;
-        }
-
         // アプリケーション終了時のハンドリング
         static void HandleApplicationExit(string reason)
         {
@@ -79,7 +78,6 @@ public class ComDispatchProxy<T> : DispatchProxy, IDisposable where T : class
                 }
             }
         }
-#endif
 
         // Lazyのデフォルト初期化
         this._comObject = new Lazy<T>(() => throw new InvalidOperationException("COM Object is not initialized."));
