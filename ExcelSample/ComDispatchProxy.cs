@@ -1,9 +1,13 @@
-﻿using System.Diagnostics;
+﻿#region usings
+using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using Excel = Microsoft.Office.Interop.Excel;
 
+#endregion
+
+#region IComDispatchProxy インターフェイス定義
 /// <summary>
 /// 生のCOMオブジェクトを取得するためのインターフェイス
 /// </summary>
@@ -19,40 +23,40 @@ public interface IComDispatchProxy : IDisposable
     /// </summary>
     object? RowObject {  get; }
 
-    void AddChiled(IComDispatchProxy childObject);
+    IComDispatchProxy? ParentProxy { get; }
+
+    void AddChild(IComDispatchProxy childObject);
 
     void RemoveChild(IComDispatchProxy childObject);
 }
+#endregion
 
+#region ComDispatchProxy クラス定義
 /// <summary>
 /// COMオブジェクトのプロキシを作成し、メソッド呼び出しを中継するためのクラス。
 /// </summary>
 /// <typeparam name="T">プロキシ化するCOMオブジェクトの型。</typeparam>
 public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : class
 {
-    // 現在のプロキシインスタンスとそれに関連する情報を保持する辞書
-    private readonly Dictionary<IComDispatchProxy, string> _childProxies = new();
-
-    private Lazy<IComDispatchProxy> _parentProxy;
-
-    // COMオブジェクト、オブジェクト名、有効なプロキシをLazyで保持
+    #region private field
     private Lazy<T> _comObject;
     private Lazy<string> _objectName;
+    private Lazy<IComDispatchProxy> _parentProxy;
     private Lazy<T> _validProxy;
+    private readonly Dictionary<IComDispatchProxy, string> _childProxies = new();
+    #endregion
 
+    #region IComDispatchProxyの実装
     private bool _hasReleased = false;
     public bool HasReleased => this._hasReleased;
 
-    /// <summary>
-    /// プロキシ化されたオブジェクトを取得します。
-    /// </summary>
     public T? Proxy => this.HasReleased ? null : this._validProxy.Value;
 
     public object? RowObject => this.HasReleased ? null : this._comObject.Value;
 
     public IComDispatchProxy? ParentProxy => this._parentProxy.IsValueCreated ? this._parentProxy.Value : null;
 
-    public void AddChiled(IComDispatchProxy childObject)
+    public void AddChild(IComDispatchProxy childObject)
     {
         lock (_childProxies)
         {
@@ -67,12 +71,20 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
             _childProxies.Remove(childObject);
         }
     }
+    #endregion
 
+    #region コンストラクタ及び初期化処理
     /// <summary>
     /// コンストラクタ。プロキシの初期化処理を行います。
     /// </summary>
     public ComDispatchProxy()
     {
+        // Lazyのデフォルト初期化
+        this._comObject = new Lazy<T>(() => throw new InvalidOperationException("COM Object is not initialized."));
+        this._objectName = new Lazy<string>(() => throw new InvalidOperationException("Object name is not initialized."));
+        this._validProxy = new Lazy<T>(() => throw new InvalidOperationException("Proxy is not initialized."));
+        this._parentProxy = new Lazy<IComDispatchProxy>(() => throw new InvalidOperationException("Parent proxy is not initialized"));
+
         // アプリケーション終了時の未解放オブジェクトを警告
         AppDomain.CurrentDomain.ProcessExit += (sender, e) =>
         {
@@ -93,42 +105,9 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
         // アプリケーション終了時のハンドリング
         static void HandleApplicationExit(string reason, ComDispatchProxy<T> proxy)
         {
-            proxy.Dispose();
-            //if (_childObjects.Count > 0)
-            //{
-            //    Debug.WriteLine($"[WARNING] Application exiting due to {reason}. Some COM objects were not released properly:");
-            //    foreach (var instanceInfo in _childObjects)
-            //    {
-            //        Debug.WriteLine($" - {instanceInfo.Key._objectName}");
-            //        Debug.WriteLine($"{instanceInfo.Value}");
-            //        instanceInfo.Key.Dispose();
-            //    }
-            //}
+            proxy.DisposeIfRoot();
         }
-
-        // Lazyのデフォルト初期化
-        this._comObject = new Lazy<T>(() => throw new InvalidOperationException("COM Object is not initialized."));
-        this._objectName = new Lazy<string>(() => throw new InvalidOperationException("Object name is not initialized."));
-        this._validProxy = new Lazy<T>(() => throw new InvalidOperationException("Proxy is not initialized."));
-        this._parentProxy = new Lazy<IComDispatchProxy>(() => throw new InvalidOperationException("Parent proxy is not initialized"));
     }
-
-
-    // スタックトレースのフィルタリングメソッド
-    private static string filterStackTrace(string stackTrace)
-    {
-        Regex[] includesRegex = { new Regex(@"cs:line \d+$") };
-
-        // スタックトレースの行ごとにフィルタリング
-        var filteredStackTrace = string.Join(Environment.NewLine, stackTrace
-            .Split(new[] { Environment.NewLine }, StringSplitOptions.None)
-            .Where(line =>
-                includesRegex.Any(regex => regex.IsMatch(line)) &&
-                line.StartsWith("   at ComDispatchProxy`") == false));
-
-        return filteredStackTrace;
-    }
-
 
     /// <summary>
     /// プロキシを初期化します。
@@ -161,6 +140,36 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
         this._parentProxy = new Lazy<IComDispatchProxy>(() => validParentProxy ?? throw new ArgumentNullException(nameof(parentProxy)));
     }
 
+    /// <summary>e
+    /// 新しいプロキシを生成します。
+    /// </summary>
+    public static ComDispatchProxy<T> CreateProxy(T comObject)
+    {
+        return CreateProxy(comObject, null);
+    }
+
+    public static ComDispatchProxy<T> CreateProxy(T comObject, object? parentObject)
+    {
+        if (comObject == null)
+        {
+            throw new ArgumentNullException(nameof(comObject), "Cannot create proxy for a null COM object.");
+        }
+
+        var proxy = Create<T, ComDispatchProxy<T>>() as ComDispatchProxy<T>;
+
+        if (proxy == null)
+        {
+            throw new InvalidOperationException("Failed to create proxy.");
+        }
+
+        Debug.WriteLine($"[LOG] ComDispatchProxy is created as '{typeof(T)}' at \n{filterStackTrace(Environment.StackTrace)}");
+        proxy.Initialize(parentObject, proxy, comObject);
+
+        return proxy;
+    }
+    #endregion
+
+    #region COMインターフェイスの呼び出しの中継と、Factory
     /// <summary>
     /// メソッド呼び出しを中継します。
     /// </summary>
@@ -318,39 +327,43 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
         {
             Debug.WriteLine($"[LOG] Wrapping returned COM object from '{method.Name}' as '{typeof(TCom)}'.");
             var childProxy = ComDispatchProxy<TCom>.CreateProxy(comObject, this);
-            this.AddChiled(childProxy);
+            this.AddChild(childProxy);
             return childProxy;
         }
     }
+    #endregion
 
-    /// <summary>e
-    /// 新しいプロキシを生成します。
-    /// </summary>
-    public static ComDispatchProxy<T> CreateProxy(T comObject)
+    #region ヘルパ
+
+    private void DisposeIfRoot()
     {
-        return CreateProxy(comObject, null);
+        lock (this._childProxies)
+        {
+            if (this.ParentProxy == null && this.HasReleased == false)
+            {
+                this.Dispose();
+            }
+        }
     }
 
-    public static ComDispatchProxy<T> CreateProxy(T comObject, object? parentObject)
+
+    // スタックトレースのフィルタリングメソッド
+    private static string filterStackTrace(string stackTrace)
     {
-        if (comObject == null)
-        {
-            throw new ArgumentNullException(nameof(comObject), "Cannot create proxy for a null COM object.");
-        }
+        Regex[] includesRegex = { new Regex(@"cs:line \d+$") };
 
-        var proxy = Create<T, ComDispatchProxy<T>>() as ComDispatchProxy<T>;
+        // スタックトレースの行ごとにフィルタリング
+        var filteredStackTrace = string.Join(Environment.NewLine, stackTrace
+            .Split(new[] { Environment.NewLine }, StringSplitOptions.None)
+            .Where(line =>
+                includesRegex.Any(regex => regex.IsMatch(line)) &&
+                line.StartsWith("   at ComDispatchProxy`") == false));
 
-        if (proxy == null)
-        {
-            throw new InvalidOperationException("Failed to create proxy.");
-        }
-
-        Debug.WriteLine($"[LOG] ComDispatchProxy is created as '{typeof(T)}' at \n{filterStackTrace(Environment.StackTrace)}");
-        proxy.Initialize(parentObject, proxy, comObject);
-
-        return proxy;
+        return filteredStackTrace;
     }
+    #endregion
 
+    #region IDisposable
     /// <summary>
     /// プロキシを解放し、関連リソースを破棄します。
     /// </summary>
@@ -365,9 +378,9 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
         lock (this._childProxies)
         {
             // ChildProxyから、要素を削除されるので、CopyのListを作ってループする
-            foreach (var childProxy in this._childProxies.ToList())
+            foreach (var childProxy in this._childProxies.Keys.ToList())
             {
-                childProxy.Key.Dispose();
+                childProxy.Dispose();
             }
 
             if (this.HasReleased == false && Marshal.IsComObject(_comObject.Value))
@@ -394,4 +407,6 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
     {
         Dispose(false); // ファイナライザから呼び出し
     }
+    #endregion
 }
+#endregion
