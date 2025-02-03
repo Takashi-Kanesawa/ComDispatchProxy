@@ -157,7 +157,7 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
         }
 
         var proxy = Create<T, ComDispatchProxy<T>>() as ComDispatchProxy<T>;
-
+                                                                                                                                                               
         if (proxy == null)
         {
             throw new InvalidOperationException("Failed to create proxy.");
@@ -171,8 +171,9 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
     #endregion
 
     #region COMインターフェイスの呼び出しの中継と、Factory
+
     /// <summary>
-    /// メソッド呼び出しを中継します。
+    /// メソッド呼び出しを中継し、取得した COM オブジェクトを適切にラップする。
     /// </summary>
     protected override object? Invoke(MethodInfo? method, object?[]? args)
     {
@@ -182,15 +183,21 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
         if (_comObject.Value == null)
             throw new InvalidOperationException("COM Object is not initialized.");
 
-        // 引数リスト内のラッパーを剥がす
+        // 引数内のプロキシを解除し、元の COM オブジェクトに戻す
         UnwrapProxiesInArgs(args);
 
         Debug.WriteLine($"[LOG] Invoking '{method.Name}' on {_objectName.Value} with args: {FormatArgs(args)}");
 
         try
         {
-            // 実際のメソッドを呼び出し、その結果を取得
-            return invlokeAndCreateProxy(method, args);
+            var result = method.Invoke(_comObject.Value, args);
+            if (result == null)
+            {
+                Debug.WriteLine($"[LOG] Method '{method.Name}' returned null.");
+                return null;
+            }
+
+            return WrapProxyIfComObject(result);
         }
         catch (TargetInvocationException ex)
         {
@@ -203,45 +210,40 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
             throw;
         }
 
-        // ローカル関数：引数のフォーマット処理
+        // -----------------------------------------------------------
+        // ローカル関数：引数のフォーマット処理（デバッグログ用）
         string FormatArgs(object?[]? args)
         {
             if (args == null || args.Length == 0)
                 return "none";
+
             return string.Join(", ", args.Select(arg => arg?.ToString() ?? "null"));
         }
 
-        // ローカル関数：引数のCOMオブジェクトをDispatchProxyから生のCOMオブジェクトに置換
+        // -----------------------------------------------------------
+        // ローカル関数：引数の COM オブジェクトを生のオブジェクトに戻す
         void UnwrapProxiesInArgs(object?[]? args)
         {
-            if (args == null)
-                return;
+            if (args == null) return;
 
             for (int i = 0; i < args.Length; i++)
             {
-                if (args[i] is not IComDispatchProxy proxy)
-                    continue;
-
-                // IGetRowObject を実装している場合は RowObject と入れ替える
-                args[i] = proxy.RowObject;
+                if (args[i] is IComDispatchProxy proxy)
+                {
+                    args[i] = proxy.RowObject;
+                }
             }
         }
 
-        // ローカル関数：元のメソッドの呼び出しと取得されたCOMオブジェクトのProxy化
-        object? invlokeAndCreateProxy(MethodInfo? method, object?[]? args)
+        // -----------------------------------------------------------
+        // ローカル関数：メソッドの返値がCOMオブジェクトの場合はProxy化する
+        object? WrapProxyIfComObject(object result)
         {
-            var result = method.Invoke(_comObject.Value, args);
-
-            if (result == null)
-            {
-                Debug.WriteLine($"[LOG] Method '{method.Name}' returned null.");
-                return null;
-            }
-
-            // COM オブジェクトの場合、適切なプロキシを生成
+            // 返り値が COM オブジェクトの場合、プロキシを作成
             if (Marshal.IsComObject(result))
             {
                 Debug.WriteLine($"[LOG] Wrapping returned COM object from '{method.Name}'.");
+
                 var childProxy = DispatchProxyFactory.CreateProxy(result, this);
                 if (childProxy is IComDispatchProxy dispatchProxy)
                 {
@@ -250,24 +252,9 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
                 return childProxy;
             }
 
-            return result; // 通常の戻り値を返す
+            return result; // 通常のオブジェクトならそのまま返す
         }
     }
-    #endregion
-
-    #region ヘルパ
-
-    private void DisposeIfRoot()
-    {
-        lock (this._childProxies)
-        {
-            if (this.ParentProxy == null && this.HasReleased == false)
-            {
-                this.Dispose();
-            }
-        }
-    }
-
 
     // スタックトレースのフィルタリングメソッド
     private static string filterStackTrace(string stackTrace)
