@@ -190,27 +190,7 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
         try
         {
             // 実際のメソッドを呼び出し、その結果を取得
-            var result = method.Invoke(_comObject.Value, args);
-
-            if (result == null)
-            {
-                Debug.WriteLine($"[LOG] Method '{method.Name}' returned null.");
-                return null;
-            }
-
-            // COM オブジェクトの場合、適切なプロキシを生成
-            if (Marshal.IsComObject(result))
-            {
-                Debug.WriteLine($"[LOG] Wrapping returned COM object from '{method.Name}'.");
-                var childProxy = DispatchProxyFactory.CreateProxy(result, this);
-                if (childProxy is IComDispatchProxy dispatchProxy)
-                {
-                    this.AddChild(dispatchProxy);
-                }
-                return childProxy;
-            }
-
-            return result; // 通常の戻り値を返す
+            return invlokeAndCreateProxy(method, args);
         }
         catch (TargetInvocationException ex)
         {
@@ -246,8 +226,33 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
                 args[i] = proxy.RowObject;
             }
         }
-    }
 
+        // ローカル関数：元のメソッドの呼び出しと取得されたCOMオブジェクトのProxy化
+        object? invlokeAndCreateProxy(MethodInfo? method, object?[]? args)
+        {
+            var result = method.Invoke(_comObject.Value, args);
+
+            if (result == null)
+            {
+                Debug.WriteLine($"[LOG] Method '{method.Name}' returned null.");
+                return null;
+            }
+
+            // COM オブジェクトの場合、適切なプロキシを生成
+            if (Marshal.IsComObject(result))
+            {
+                Debug.WriteLine($"[LOG] Wrapping returned COM object from '{method.Name}'.");
+                var childProxy = DispatchProxyFactory.CreateProxy(result, this);
+                if (childProxy is IComDispatchProxy dispatchProxy)
+                {
+                    this.AddChild(dispatchProxy);
+                }
+                return childProxy;
+            }
+
+            return result; // 通常の戻り値を返す
+        }
+    }
     #endregion
 
     #region ヘルパ
