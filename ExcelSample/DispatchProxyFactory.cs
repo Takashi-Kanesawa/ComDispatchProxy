@@ -6,7 +6,7 @@ using Excel = Microsoft.Office.Interop.Excel;
 
 public static class DispatchProxyFactory
 {
-    private static readonly Dictionary<Type, Func<object, object?, object>> ProxyCreators = new();
+    private static readonly Dictionary<Type, Func<object, object, object>> ProxyCreators = new();
 
     /// <summary>
     /// XML ファイルから対象の COM インターフェイスを読み込み、ProxyCreators を初期化
@@ -56,11 +56,6 @@ public static class DispatchProxyFactory
     /// <exception cref="ArgumentNullException">`comObject` が `null` の場合</exception>
     public static object? CreateProxy(object comObject, object parentObject)
     {
-        if (comObject == null)
-        {
-            throw new ArgumentNullException(nameof(comObject));
-        }
-
         // 1. ProxyCreators に登録された型を順にチェック
         foreach (var (type, creator) in ProxyCreators)
         {

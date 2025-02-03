@@ -51,7 +51,18 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
     private bool _hasReleased = false;
     public bool HasReleased => this._hasReleased;
 
-    public T? Proxy => this.HasReleased ? null : this._validProxy.Value;
+    public T Proxy
+    {
+        get
+        {
+            if (this.HasReleased)
+            {
+                throw new InvalidOperationException($"Proxy has been released : {this._objectName.Value}");
+            }
+
+            return this._validProxy.Value;
+        }
+    }
 
     public object? RowObject => this.HasReleased ? null : this._comObject.Value;
 
@@ -256,6 +267,20 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
         }
     }
 
+    #endregion
+
+    #region ヘルパ
+
+    private void DisposeIfRoot()
+    {
+        lock (this._childProxies)
+        {
+            if (this.ParentProxy == null && this.HasReleased == false)
+            {
+                this.Dispose();
+            }
+        }
+    }
     // スタックトレースのフィルタリングメソッド
     private static string filterStackTrace(string stackTrace)
     {
