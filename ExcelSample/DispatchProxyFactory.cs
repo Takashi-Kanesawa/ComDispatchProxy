@@ -6,7 +6,7 @@ using Excel = Microsoft.Office.Interop.Excel;
 
 public static class DispatchProxyFactory
 {
-    private static readonly Dictionary<Type, Func<object, object>> ProxyCreators = new();
+    private static readonly Dictionary<Type, Func<object, object?, object>> ProxyCreators = new();
 
     /// <summary>
     /// XML ファイルから対象の COM インターフェイスを読み込み、ProxyCreators を初期化
@@ -35,22 +35,17 @@ public static class DispatchProxyFactory
                                                                                                                                                                                                                                                                                                    
                 if (generateInterfaces.Contains(type.FullName))
                 {
-                    ProxyCreators[type] = obj => CreateProxyForType(type, obj);
+                    ProxyCreators[type] = (obj, parentObj) => CreateProxyForType(type, obj, parentObj);
                     Debug.WriteLine($"[LOG] Registered proxy for {type.FullName}");
                 }
             }
         }                                                                                                                                                                                                                                                                                                                                                                                                                                
     }
-    /*
-        { typeof(Excel.Application), obj => ComDispatchProxy<Excel.Application>.CreateProxy((Excel.Application)obj, "Excel.Application") },
-        { typeof(Excel.Workbooks), obj => ComDispatchProxy<Excel.Workbooks>.CreateProxy((Excel.Workbooks)obj, "Excel.Workbooks") },
-     */
-
 
     /// <summary>                                                                                                                                                                                                                                                                                                                                                                                                                            
     /// COM オブジェクトを判定し、適切なプロキシを生成します。
     /// </summary>
-    public static object? CreateProxy(object comObject)
+    public static object? CreateProxy(object comObject, object parentObject)
     {
         if (comObject == null) throw new ArgumentNullException(nameof(comObject));
 
@@ -59,7 +54,7 @@ public static class DispatchProxyFactory
             if (IsComObjectOfType(comObject, type))
             {
                 Debug.WriteLine($"[LOG] Creating proxy for type: {type.FullName}");
-                return creator(comObject);
+                return creator(comObject, parentObject);
             }
         }
 
@@ -101,13 +96,13 @@ public static class DispatchProxyFactory
     /// <summary>
     /// 指定された型のプロキシを作成
     /// </summary>
-    private static object CreateProxyForType(Type interfaceType, object comObject)
+    private static object CreateProxyForType(Type interfaceType, object comObject, object parentObject)
     {
         var proxyType = typeof(ComDispatchProxy<>).MakeGenericType(interfaceType);
         var createMethod = proxyType.GetMethod("CreateProxy",
             BindingFlags.Static | BindingFlags.Public,
             null,
-            new Type[] { interfaceType }, 
+            new Type[] { interfaceType, typeof(object) }, 
             null);
 
         if (createMethod == null)
@@ -115,7 +110,7 @@ public static class DispatchProxyFactory
             throw new InvalidOperationException($"Failed to locate 'CreateProxy' method on {proxyType.FullName}");
         }
 
-        var methodInfo = createMethod.Invoke(null, new object[] { comObject });
+        var methodInfo = createMethod.Invoke(null, new object[] { comObject, parentObject });
 
         if ( methodInfo == null)
         {

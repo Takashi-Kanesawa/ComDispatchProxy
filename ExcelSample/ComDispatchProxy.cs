@@ -2,6 +2,7 @@
 using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.Marshalling;
 using System.Text.RegularExpressions;
 using Excel = Microsoft.Office.Interop.Excel;
 
@@ -200,8 +201,13 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
             // COM オブジェクトの場合、適切なプロキシを生成
             if (Marshal.IsComObject(result))
             {
-                DispatchProxyFactory.CreateProxy(result);
-//                return ProxyFactory(method, result);
+                Debug.WriteLine($"[LOG] Wrapping returned COM object from '{method.Name}'.");
+                var childProxy = DispatchProxyFactory.CreateProxy(result, this);
+                if (childProxy is IComDispatchProxy dispatchProxy)
+                {
+                    this.AddChild(dispatchProxy);
+                }
+                return childProxy;
             }
 
             return result; // 通常の戻り値を返す
@@ -242,96 +248,6 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
         }
     }
 
-    /// <summary>
-    /// COMオブジェクトに基づいて適切なプロキシを生成します。
-    /// </summary>
-    private object ProxyFactory(MethodInfo? method, object result)
-    {
-        if (method is null || result is null)
-        {
-            throw new ArgumentNullException($"{nameof(method)} or {nameof(result)} is null.");
-        }
-
-        Debug.WriteLine($"result.GetType() = {result.GetType()}");
-
-        // 型ごとにプロキシを生成
-        switch (result)
-        {
-            // 基本操作で頻繁に使用されるオブジェクト
-            case Excel.Range range: return WrapProxy(range);    // Rangeは最も使用頻度が高そう
-            case Excel.Application application: return WrapProxy(application);
-            case Excel.Workbooks workbooks: return WrapProxy(workbooks);
-            case Excel.Workbook workbook: return WrapProxy(workbook);
-            case Excel.Sheets sheets: return WrapProxy(sheets);
-            case Excel.Worksheet worksheet: return WrapProxy(worksheet);
-
-            // スタイル・グラフ関連の末端オブジェクト
-            case Excel.Font font: return WrapProxy(font);
-            case Excel.Border border: return WrapProxy(border);
-            case Excel.Borders borders: return WrapProxy(borders);
-            case Excel.Chart chart: return WrapProxy(chart);
-            case Excel.ChartObject chrObj: return WrapProxy(chrObj);
-            case Excel.Axis axis: return WrapProxy(axis);
-            case Excel.Point point: return WrapProxy(point);
-            case Excel.Series series: return WrapProxy(series);
-
-            // グラフ関連のコレクション
-            case Excel.ChartObjects chrObjs: return WrapProxy(chrObjs);
-            case Excel.SeriesCollection seriesCollction: return WrapProxy(seriesCollction);
-            case Excel.Axes axes: return WrapProxy(axes);
-            case Excel.Points points: return WrapProxy(points);
-
-            // 使用頻度の少なそうな他の要素
-            case Excel.Shape shape: return WrapProxy(shape);
-            case Excel.Shapes shapes: return WrapProxy(shapes);
-            case Excel.ListObject lstObj: return WrapProxy(lstObj);
-            case Excel.ListObjects lstObjs: return WrapProxy(lstObjs);
-            case Excel.Hyperlink hLink: return WrapProxy(hLink);
-            case Excel.Hyperlinks hLinks: return WrapProxy(hLinks);
-            case Excel.Name name: return WrapProxy(name);
-            case Excel.Names names: return WrapProxy(names);
-            case Excel.PivotTable pt: return WrapProxy(pt);
-            case Excel.PivotTables pts: return WrapProxy(pts);
-            case Excel.Interior interior: return WrapProxy(interior);
-            case Excel.Pictures pictures: return WrapProxy(pictures);
-
-            // その他
-            case Excel.Windows windows: return WrapProxy(windows);
-            case Excel.Window window: return WrapProxy(window);
-            case Excel.AutoFilter af: return WrapProxy(af);
-            case Excel.Filters filters: return WrapProxy(filters);
-            case Excel.PageSetup pageSetup: return WrapProxy(pageSetup);
-            case Excel.QueryTable queryTable: return WrapProxy(queryTable);
-            case Excel.TableStyle tableStyle: return WrapProxy(tableStyle);
-            case Excel.PivotCache pivotCache: return WrapProxy(pivotCache);
-            case Excel.PivotField pivotField: return WrapProxy(pivotField);
-            case Excel.PivotItem pivotItem: return WrapProxy(pivotItem);
-            case Excel.Trendlines trendlines: return WrapProxy(trendlines);
-            case Excel.DataLabels dataLabels: return WrapProxy(dataLabels);
-            case Excel.DataLabel dataLabel: return WrapProxy(dataLabel);
-            case Excel.Legend legend: return WrapProxy(legend);
-            case Excel.Style style: return WrapProxy(style);
-            case Excel.Validation validation: return WrapProxy(validation);
-            case Excel.FormatCondition formatCondition: return WrapProxy(formatCondition);
-            case Excel.FormatConditions formatConditions: return WrapProxy(formatConditions);
-            case Excel.Comment comment: return WrapProxy(comment);
-            case Excel.Comments comments: return WrapProxy(comments);
-            case Excel.GroupBoxes groupBoxes: return WrapProxy(groupBoxes);
-
-            default:
-                Debug.WriteLine($"[LOG] Can't create proxy for {_objectName.Value}.{method.Name}");
-                throw new InvalidOperationException($"Unhandled COM object type: {result.GetType().FullName}");
-        }
-
-        // ローカル関数：COMオブジェクトをDispatchProxyでラップする。
-        ComDispatchProxy<TCom> WrapProxy<TCom>(TCom comObject) where TCom : class
-        {
-            Debug.WriteLine($"[LOG] Wrapping returned COM object from '{method.Name}' as '{typeof(TCom)}'.");
-            var childProxy = ComDispatchProxy<TCom>.CreateProxy(comObject, this);
-            this.AddChild(childProxy);
-            return childProxy;
-        }
-    }
     #endregion
 
     #region ヘルパ
