@@ -200,7 +200,8 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
             // COM オブジェクトの場合、適切なプロキシを生成
             if (Marshal.IsComObject(result))
             {
-                return ProxyFactory(method, result);
+                DispatchProxyFactory.CreateProxy(result);
+//                return ProxyFactory(method, result);
             }
 
             return result; // 通常の戻り値を返す
