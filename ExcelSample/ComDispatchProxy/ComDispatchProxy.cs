@@ -2,9 +2,9 @@
 using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Runtime.InteropServices.Marshalling;
 using System.Text.RegularExpressions;
-using Excel = Microsoft.Office.Interop.Excel;
+
+namespace ComDispatchProxy;
 
 #endregion
 
@@ -17,7 +17,7 @@ public interface IComDispatchProxy : IDisposable
     /// <summary>
     /// Dispose済み
     /// </summary>
-    bool HasReleased { get; }
+    bool WasReleased { get; }
 
     /// <summary>
     /// 生のCOMオブジェクトを取得します
@@ -49,13 +49,13 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
 
     #region IComDispatchProxyの実装
     private bool _hasReleased = false;
-    public bool HasReleased => this._hasReleased;
+    public bool WasReleased => this._hasReleased;
 
     public T Proxy
     {
         get
         {
-            if (this.HasReleased)
+            if (this.WasReleased)
             {
                 throw new InvalidOperationException($"Proxy has been released : {this._objectName.Value}");
             }
@@ -64,7 +64,7 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
         }
     }
 
-    public object? RowObject => this.HasReleased ? null : this._comObject.Value;
+    public object? RowObject => this.WasReleased ? null : this._comObject.Value;
 
     public IComDispatchProxy? ParentProxy => this._parentProxy.IsValueCreated ? this._parentProxy.Value : null;
 
@@ -127,7 +127,9 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
     public void Initialize(object? parentProxy, ComDispatchProxy<T> creatingProxy, T comObject)
     {
         if (creatingProxy == null)
+        {
             throw new ArgumentNullException(nameof(creatingProxy), "Creating Proxy cannnot be null.");
+        }
 
         this._comObject = new Lazy<T>(() => comObject ?? throw new ArgumentNullException(nameof(comObject)));
         this._objectName = new Lazy<string>(() => typeof(T).FullName ?? string.Empty);
@@ -139,6 +141,7 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
 
         this._validProxy = new Lazy<T>(() => validProxy ?? throw new ArgumentNullException(nameof(creatingProxy)));
 
+        // 最上位（Excel.Application）の親は無いので
         if (parentProxy is null)
         {
             return;
@@ -152,15 +155,7 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
         this._parentProxy = new Lazy<IComDispatchProxy>(() => validParentProxy ?? throw new ArgumentNullException(nameof(parentProxy)));
     }
 
-    /// <summary>e
-    /// 新しいプロキシを生成します。
-    /// </summary>
-    public static ComDispatchProxy<T> CreateProxy(T comObject)
-    {
-        return CreateProxy(comObject, null);
-    }
-
-    public static ComDispatchProxy<T> CreateProxy(T comObject, object? parentObject)
+    public static ComDispatchProxy<T> CreateProxy(T comObject, object? parentObject = null)
     {
         if (comObject == null)
         {
@@ -174,9 +169,9 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
             throw new InvalidOperationException("Failed to create proxy.");
         }
 
-        Debug.WriteLine($"[LOG] ComDispatchProxy is created as '{typeof(T)}' at \n{filterStackTrace(Environment.StackTrace)}");
         proxy.Initialize(parentObject, proxy, comObject);
 
+        Debug.WriteLine($"[LOG] ComDispatchProxy is created as '{typeof(T)}'");
         return proxy;
     }
     #endregion
@@ -255,7 +250,7 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
             {
                 Debug.WriteLine($"[LOG] Wrapping returned COM object from '{method.Name}'.");
 
-                var childProxy = DispatchProxyFactory.CreateProxy(result, this);
+                var childProxy = DispatchProxyFactory.CreateProxyByFactoryFunction(result, this);
                 if (childProxy is IComDispatchProxy dispatchProxy)
                 {
                     this.AddChild(dispatchProxy);
@@ -275,7 +270,7 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
     {
         lock (this._childProxies)
         {
-            if (this.ParentProxy == null && this.HasReleased == false)
+            if (this.ParentProxy == null && this.WasReleased == false)
             {
                 this.Dispose();
             }
@@ -317,17 +312,19 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
                 childProxy.Dispose();
             }
 
-            if (this.HasReleased == false && Marshal.IsComObject(_comObject.Value))
+            if (this.WasReleased || Marshal.IsComObject(_comObject.Value) == false)
             {
-#pragma warning disable CA1416 // OS互換性警告を無視
-                Marshal.ReleaseComObject(_comObject.Value);
-#pragma warning restore CA1416
-                this._hasReleased = true;
-                
-                // ParentProxyのChildProxiesから自分自身を削除。
-                // この処理のために上ではCopyを作ってループしている。
-                this.ParentProxy?.RemoveChild(this);
+                return;
             }
+
+#pragma warning disable CA1416 // OS互換性警告を無視
+            Marshal.ReleaseComObject(_comObject.Value);
+#pragma warning restore CA1416
+            this._hasReleased = true;
+
+            // ParentProxyのChildProxiesから自分自身を削除。
+            // この処理のために上ではCopyを作ってループしている。
+            this.ParentProxy?.RemoveChild(this);
 
             Debug.WriteLine($"{this._objectName} has been released.");
         }

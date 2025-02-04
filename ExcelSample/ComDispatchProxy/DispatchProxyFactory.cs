@@ -4,18 +4,20 @@ using System.Runtime.InteropServices;
 using System.Xml.Linq;
 using Excel = Microsoft.Office.Interop.Excel;
 
+namespace ComDispatchProxy;
+
 public static class DispatchProxyFactory
 {
-    private static readonly Dictionary<Type, Func<object, object, object>> ProxyCreators = new();
+    private static readonly Dictionary<Type, Func<object, object, object>> factoryFunctionDictionary = new();
 
     /// <summary>
     /// XML ファイルから対象の COM インターフェイスを読み込み、ProxyCreators を初期化
     /// </summary>
     public static void InitializeFromXml(string xmlPath)
     {
-        lock (ProxyCreators)
+        lock (factoryFunctionDictionary)
         {
-            ProxyCreators.Clear();
+            factoryFunctionDictionary.Clear();
 
             var xml = XDocument.Load(xmlPath);
 
@@ -31,11 +33,14 @@ public static class DispatchProxyFactory
 
             foreach (var type in allTypes)
             {
-                if (type.FullName == null) continue;
-                                                                                                                                                                                                                                                                                                   
+                if (type.FullName == null)
+                {
+                    continue;
+                }
+                
                 if (generateInterfaces.Contains(type.FullName))
                 {
-                    ProxyCreators[type] = (obj, parentObj) => CreateProxyForType(type, obj, parentObj);
+                    factoryFunctionDictionary[type] = (obj, parentObj) => CreateProxyForType(type, obj, parentObj);
                     Debug.WriteLine($"[LOG] Registered proxy for {type.FullName}");
                 }
             }
@@ -54,10 +59,10 @@ public static class DispatchProxyFactory
     /// <param name="parentObject">親の COM オブジェクト（親子関係を管理するため）</param>
     /// <returns>対応する型の `ComDispatchProxy<T>` インスタンス、または `comObject` そのまま</returns>
     /// <exception cref="ArgumentNullException">`comObject` が `null` の場合</exception>
-    public static object? CreateProxy(object comObject, object parentObject)
+    public static object? CreateProxyByFactoryFunction(object comObject, object parentObject)
     {
         // 1. ProxyCreators に登録された型を順にチェック
-        foreach (var (type, creator) in ProxyCreators)
+        foreach (var (type, factoryFunction) in factoryFunctionDictionary)
         {
             // 2. `comObject` が `type` のインターフェースを実装しているか確認
             if (IsComObjectOfType(comObject, type))
@@ -65,7 +70,7 @@ public static class DispatchProxyFactory
                 Debug.WriteLine($"[LOG] Creating proxy for type: {type.FullName}");
 
                 // 3. 一致する型の `creator` メソッドを呼び出し、プロキシを生成
-                return creator(comObject, parentObject);
+                return factoryFunction(comObject, parentObject);
             }
         }
 

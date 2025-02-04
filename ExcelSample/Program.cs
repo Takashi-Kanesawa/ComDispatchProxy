@@ -1,4 +1,5 @@
 ﻿using Excel = Microsoft.Office.Interop.Excel;
+using ComDispatchProxy;
 
 DispatchProxyFactory.InitializeFromXml("ExcelInterfaces.xml");
 
