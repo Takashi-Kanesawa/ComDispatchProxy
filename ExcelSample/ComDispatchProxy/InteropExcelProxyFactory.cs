@@ -6,7 +6,7 @@ using Excel = Microsoft.Office.Interop.Excel;
 
 namespace ComDispatchProxy;
 
-public static class DispatchProxyFactory
+public static class InteropExcelProxyFactory
 {
     private static readonly Dictionary<Type, Func<object, object, object>> factoryFunctionDictionary = new();
 
@@ -20,32 +20,42 @@ public static class DispatchProxyFactory
             factoryFunctionDictionary.Clear();
 
             var xml = XDocument.Load(xmlPath);
-
-            // 生成対象のインターフェイスリストを取得
-            var generateInterfaces = xml
-                .Descendants("Generate")
-                .Descendants("Interface")
-                .Select(x => x.Value)
-                .ToHashSet(); // 重複防止
+            var generateAssemblies = xml.Descendants("Generate").Descendants("Assembly");
 
             var allTypes = typeof(Excel.Application).Assembly.GetTypes()
                 .Where(t => t.IsInterface && t.Namespace == "Microsoft.Office.Interop.Excel");
 
-            foreach (var type in allTypes)
+            foreach (var assemblyElement in generateAssemblies)
             {
-                if (type.FullName == null)
+                string? assemblyName = assemblyElement.Attribute("name")?.Value;
+                if (string.IsNullOrEmpty(assemblyName) || assemblyName != "Microsoft.Office.Interop.Excel")
                 {
                     continue;
                 }
-                
-                if (generateInterfaces.Contains(type.FullName))
-                {
-                    factoryFunctionDictionary[type] = (obj, parentObj) => CreateProxyForType(type, obj, parentObj);
-                    Debug.WriteLine($"[LOG] Registered proxy for {type.FullName}");
-                }
+
+                CreateFactoryFunctions(assemblyElement, allTypes, assemblyName);
             }
-        }                                                                                                                                                                                                                                                                                                                                                                                                                                
+        }
+
+        // -----------------------------------------------------------
+        // ローカル関数：ファクトリ関数を生成して、Dictionaryに登録する
+        void CreateFactoryFunctions(XElement assemblyElement, IEnumerable< Type> allTypes, string? assemblyName)
+        {
+            var interfaces = assemblyElement.Descendants("Interface").Select(x => $"{assemblyName}.{x.Value}");
+
+            foreach (var type in allTypes)
+            {
+                if (type.FullName == null || interfaces.Contains(type.FullName) == false)
+                {
+                    continue;
+                }
+
+                factoryFunctionDictionary[type] = (obj, parentObj) => CreateProxyForType(type, obj, parentObj);
+                Debug.WriteLine($"[LOG] Registered proxy for {type.FullName}");
+            }
+        }
     }
+
 
     /// <summary>
     /// COM オブジェクトの型を判定し、適切なプロキシを生成する。

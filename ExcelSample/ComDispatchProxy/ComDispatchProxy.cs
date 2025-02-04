@@ -4,33 +4,9 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 
+#endregion
+
 namespace ComDispatchProxy;
-
-#endregion
-
-#region IComDispatchProxy インターフェイス定義
-/// <summary>
-/// 生のCOMオブジェクトを取得するためのインターフェイス
-/// </summary>
-public interface IComDispatchProxy : IDisposable
-{
-    /// <summary>
-    /// Dispose済み
-    /// </summary>
-    bool WasReleased { get; }
-
-    /// <summary>
-    /// 生のCOMオブジェクトを取得します
-    /// </summary>
-    object? RowObject {  get; }
-
-    IComDispatchProxy? ParentProxy { get; }
-
-    void AddChild(IComDispatchProxy childObject);
-
-    void RemoveChild(IComDispatchProxy childObject);
-}
-#endregion
 
 #region ComDispatchProxy クラス定義
 /// <summary>
@@ -250,7 +226,7 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
             {
                 Debug.WriteLine($"[LOG] Wrapping returned COM object from '{method.Name}'.");
 
-                var childProxy = DispatchProxyFactory.CreateProxyByFactoryFunction(result, this);
+                var childProxy = InteropExcelProxyFactory.CreateProxyByFactoryFunction(result, this);
                 if (childProxy is IComDispatchProxy dispatchProxy)
                 {
                     this.AddChild(dispatchProxy);

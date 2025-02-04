@@ -1,7 +1,9 @@
 ﻿using Excel = Microsoft.Office.Interop.Excel;
 using ComDispatchProxy;
 
-DispatchProxyFactory.InitializeFromXml("ExcelInterfaces.xml");
+
+
+InteropExcelProxyFactory.InitializeFromXml("ExcelInterfaces.xml");
 
 // Excel アプリケーションのインスタンスを作成し、ComDispatchProxy を介して管理する
 using (var excelApp = ComDispatchProxy<Excel.Application>.CreateProxy(new Excel.Application()))
