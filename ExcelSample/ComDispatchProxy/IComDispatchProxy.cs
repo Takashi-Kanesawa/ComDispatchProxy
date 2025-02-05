@@ -13,6 +13,11 @@ namespace ComDispatchProxy;
 public interface IComDispatchProxy : IDisposable
 {
     /// <summary>
+    /// 
+    /// </summary>
+    IComProxyFactory ProxyFactory { get; }
+
+    /// <summary>
     /// Dispose済み
     /// </summary>
     bool WasReleased { get; }

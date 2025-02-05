@@ -6,14 +6,14 @@ using Excel = Microsoft.Office.Interop.Excel;
 
 namespace ComDispatchProxy;
 
-public static class InteropExcelProxyFactory
+public class InteropExcelProxyFactory : IComProxyFactory
 {
-    private static readonly Dictionary<Type, Func<object, object, object>> factoryFunctionDictionary = new();
+    private readonly Dictionary<Type, Func<object, object, object>> factoryFunctionDictionary = new();
 
     /// <summary>
     /// XML ファイルから対象の COM インターフェイスを読み込み、ProxyCreators を初期化
     /// </summary>
-    public static void InitializeFromXml(string xmlPath)
+    public InteropExcelProxyFactory(string xmlPath)
     {
         lock (factoryFunctionDictionary)
         {
@@ -69,7 +69,7 @@ public static class InteropExcelProxyFactory
     /// <param name="parentObject">親の COM オブジェクト（親子関係を管理するため）</param>
     /// <returns>対応する型の `ComDispatchProxy<T>` インスタンス、または `comObject` そのまま</returns>
     /// <exception cref="ArgumentNullException">`comObject` が `null` の場合</exception>
-    public static object? CreateProxyByFactoryFunction(object comObject, object parentObject)
+    public object? CreateProxyByFactoryFunction(object comObject, object parentObject)
     {
         // 1. ProxyCreators に登録された型を順にチェック
         foreach (var (type, factoryFunction) in factoryFunctionDictionary)
@@ -157,7 +157,7 @@ public static class InteropExcelProxyFactory
     /// <param name="parentObject">親となる COM オブジェクト(親オブジェクトのDisposeで子オブジェクトもDisposeするため）</param>
     /// <returns>生成された `ComDispatchProxy<T>` のインスタンス</returns>
     /// <exception cref="InvalidOperationException">メソッドの取得やプロキシ生成に失敗した場合</exception>
-    private static object CreateProxyForType(Type interfaceType, object comObject, object parentObject)
+    private object CreateProxyForType(Type interfaceType, object comObject, object parentObject)
     {
         // 1. `ComDispatchProxy<T>` のジェネリック型を動的に生成
         var proxyType = typeof(ComDispatchProxy<>).MakeGenericType(interfaceType);
@@ -166,7 +166,7 @@ public static class InteropExcelProxyFactory
         var createMethod = proxyType.GetMethod("CreateProxy",
             BindingFlags.Static | BindingFlags.Public, // 静的 & 公開メソッドを検索
             null,
-            new Type[] { interfaceType, typeof(object) }, // メソッドの引数型を指定（T, object）
+            new Type[] { typeof(IComProxyFactory), interfaceType, typeof(object) }, // メソッドの引数型を指定（T, object）
             null);
 
         // メソッドが見つからない場合は例外をスロー
@@ -176,7 +176,7 @@ public static class InteropExcelProxyFactory
         }
 
         // 3. `CreateProxy(T comObject, object parentObject)` を実行してプロキシを作成
-        var proxyInstance = createMethod.Invoke(null, new object[] { comObject, parentObject });
+        var proxyInstance = createMethod.Invoke(null, new object[] { this, comObject, parentObject });
 
         // 生成されたプロキシが `null` の場合は例外をスロー
         if (proxyInstance == null)

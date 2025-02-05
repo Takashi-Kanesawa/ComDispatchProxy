@@ -20,6 +20,7 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
     private Lazy<string> _objectName;
     private Lazy<IComDispatchProxy> _parentProxy;
     private Lazy<T> _validProxy;
+    private Lazy<IComProxyFactory> _proxyFactory;
     private readonly Dictionary<IComDispatchProxy, string> _childProxies = new();
     #endregion
 
@@ -39,6 +40,7 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
             return this._validProxy.Value;
         }
     }
+    public IComProxyFactory ProxyFactory => this._proxyFactory.Value;
 
     public object? RowObject => this.WasReleased ? null : this._comObject.Value;
 
@@ -68,6 +70,7 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
     public ComDispatchProxy()
     {
         // Lazyのデフォルト初期化
+        this._proxyFactory = new Lazy<IComProxyFactory>(() => throw new InvalidOperationException("Proxy Factory is not initialized"));
         this._comObject = new Lazy<T>(() => throw new InvalidOperationException("COM Object is not initialized."));
         this._objectName = new Lazy<string>(() => throw new InvalidOperationException("Object name is not initialized."));
         this._validProxy = new Lazy<T>(() => throw new InvalidOperationException("Proxy is not initialized."));
@@ -100,13 +103,14 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
     /// <summary>
     /// プロキシを初期化します。
     /// </summary>
-    public void Initialize(object? parentProxy, ComDispatchProxy<T> creatingProxy, T comObject)
+    public void Initialize(IComProxyFactory proxyFactory, object? parentProxy, ComDispatchProxy<T> creatingProxy, T comObject)
     {
         if (creatingProxy == null)
         {
             throw new ArgumentNullException(nameof(creatingProxy), "Creating Proxy cannnot be null.");
         }
 
+        this._proxyFactory = new Lazy<IComProxyFactory>(() => proxyFactory ?? throw new ArgumentNullException(nameof(proxyFactory)));
         this._comObject = new Lazy<T>(() => comObject ?? throw new ArgumentNullException(nameof(comObject)));
         this._objectName = new Lazy<string>(() => typeof(T).FullName ?? string.Empty);
 
@@ -115,7 +119,7 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
             throw new ArgumentException($"Creating Proxy is not Proxy of {nameof(T)}.", nameof(creatingProxy));
         }
 
-        this._validProxy = new Lazy<T>(() => validProxy ?? throw new ArgumentNullException(nameof(creatingProxy)));
+        this._validProxy = new Lazy<T>(validProxy);
 
         // 最上位（Excel.Application）の親は無いので
         if (parentProxy is null)
@@ -131,8 +135,13 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
         this._parentProxy = new Lazy<IComDispatchProxy>(() => validParentProxy ?? throw new ArgumentNullException(nameof(parentProxy)));
     }
 
-    public static ComDispatchProxy<T> CreateProxy(T comObject, object? parentObject = null)
+    public static ComDispatchProxy<T> CreateProxy(IComProxyFactory proxyFactory, T comObject, object? parentObject = null)
     {
+        if( proxyFactory == null)
+        {
+            throw new ArgumentNullException(nameof(proxyFactory), "A proxyFactory is required to create a proxy.");
+        }
+
         if (comObject == null)
         {
             throw new ArgumentNullException(nameof(comObject), "Cannot create proxy for a null COM object.");
@@ -145,7 +154,7 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
             throw new InvalidOperationException("Failed to create proxy.");
         }
 
-        proxy.Initialize(parentObject, proxy, comObject);
+        proxy.Initialize(proxyFactory, parentObject, proxy, comObject);
 
         Debug.WriteLine($"[LOG] ComDispatchProxy is created as '{typeof(T)}'");
         return proxy;
@@ -226,7 +235,7 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
             {
                 Debug.WriteLine($"[LOG] Wrapping returned COM object from '{method.Name}'.");
 
-                var childProxy = InteropExcelProxyFactory.CreateProxyByFactoryFunction(result, this);
+                var childProxy = this.ProxyFactory.CreateProxyByFactoryFunction(result, this);
                 if (childProxy is IComDispatchProxy dispatchProxy)
                 {
                     this.AddChild(dispatchProxy);

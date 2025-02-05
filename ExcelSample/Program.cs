@@ -2,11 +2,10 @@
 using ComDispatchProxy;
 
 
-
-InteropExcelProxyFactory.InitializeFromXml("ExcelInterfaces.xml");
+var excelFactory = new InteropExcelProxyFactory("ExcelInterfaces.xml");
 
 // Excel アプリケーションのインスタンスを作成し、ComDispatchProxy を介して管理する
-using (var excelApp = ComDispatchProxy<Excel.Application>.CreateProxy(new Excel.Application()))
+using (var excelApp = ComDispatchProxy<Excel.Application>.CreateProxy(excelFactory, new Excel.Application()))
 
 // 個別のオブジェクトは、暗黙的に呼び出されるCOMインターフェイスもあるため、Proxy経由で取得する
 using (var wbs = excelApp.Proxy.Workbooks as ComDispatchProxy<Excel.Workbooks>)
