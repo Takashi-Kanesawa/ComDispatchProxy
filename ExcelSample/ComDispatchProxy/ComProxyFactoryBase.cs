@@ -1,4 +1,5 @@
-﻿using System.Diagnostics;
+﻿using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Xml.Linq;
@@ -7,7 +8,7 @@ namespace ComDispatchProxy;
 
 public abstract class ComProxyFactoryBase : IComProxyFactory
 {
-    private readonly Dictionary<Type, Func<object, object, object>> factoryFunctionDictionary = new();
+    private readonly ConcurrentDictionary<Type, Func<object, object, object>> factoryFunctionDictionary = new();
 
     protected abstract string TargetAssemblyName { get; }
 
@@ -18,18 +19,15 @@ public abstract class ComProxyFactoryBase : IComProxyFactory
     /// </summary>
     public ComProxyFactoryBase(string xmlPath)
     {
-        lock (factoryFunctionDictionary)
-        {
-            factoryFunctionDictionary.Clear();
+        factoryFunctionDictionary.Clear();
 
-            var xml = XDocument.Load(xmlPath);
+        var xml = XDocument.Load(xmlPath);
 
-            IEnumerable<string> proxyTargetInterfaces = GetTargetInterfaces(xml);
+        IEnumerable<string> proxyTargetInterfaces = GetTargetInterfaces(xml);
 
-            IEnumerable<Type> usedTypes = GetUsedTypes();
+        IEnumerable<Type> usedTypes = GetUsedTypes();
 
-            CreateFactoryFunctions(proxyTargetInterfaces, usedTypes);
-        }
+        CreateFactoryFunctions(proxyTargetInterfaces, usedTypes);
 
         // -----------------------------------------------------------
         // ローカル関数：ファクトリ関数を生成して、Dictionaryに登録する
