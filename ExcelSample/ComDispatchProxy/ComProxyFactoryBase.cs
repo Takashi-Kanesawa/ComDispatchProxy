@@ -59,9 +59,9 @@ public abstract class ComProxyFactoryBase : IComProxyFactory
     /// <summary>
     /// COM オブジェクトの型を判定し、適切なプロキシを生成する。
     ///
-    /// 1. `ProxyCreators` に登録されている型リストを順にチェック。
+    /// 1. `factoryFunctionDictionary` に登録されている型リストを順にチェック。
     /// 2. `IsComObjectOfType()` を使用して `comObject` がその型 (`type`) を実装しているか判定。
-    /// 3. 一致する型が見つかれば、その型に対応する `creator` メソッドを呼び出してプロキシを生成し返す。
+    /// 3. 一致する型が見つかれば、その型に対応する `factoryFunction` メソッドを呼び出してプロキシを生成し返す。
     /// 4. 一致する型が見つからなければ、`comObject` をそのまま返す。
     /// </summary>
     /// <param name="comObject">プロキシを作成する COM オブジェクト</param>
@@ -70,7 +70,7 @@ public abstract class ComProxyFactoryBase : IComProxyFactory
     /// <exception cref="ArgumentNullException">`comObject` が `null` の場合</exception>
     public object? CreateProxyByFactoryFunction(object comObject, object parentObject)
     {
-        // 1. ProxyCreators に登録された型を順にチェック
+        // 1.  `factoryFunctionDictionary` に登録されている型リストを順にチェック。
         foreach (var (type, factoryFunction) in factoryFunctionDictionary)
         {
             // 2. `comObject` が `type` のインターフェースを実装しているか確認
@@ -78,12 +78,12 @@ public abstract class ComProxyFactoryBase : IComProxyFactory
             {
                 Debug.WriteLine($"[LOG] Creating proxy for type: {type.FullName}");
 
-                // 3. 一致する型の `creator` メソッドを呼び出し、プロキシを生成
+                // 3. 一致する型が見つかれば、その型に対応する `factoryFunction` メソッドを呼び出してプロキシを生成
                 return factoryFunction(comObject, parentObject);
             }
         }
 
-        // 4. 一致する型がない場合、そのままのオブジェクトを返す
+        // 4. 一致する型が見つからなければ、`comObject` をそのまま返す。
         Debug.WriteLine($"[LOG] No matching type found for COM object. Returning original object.");
         return comObject;
     }
