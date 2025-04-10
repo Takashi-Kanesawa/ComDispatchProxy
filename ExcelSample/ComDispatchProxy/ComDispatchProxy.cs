@@ -25,8 +25,8 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
     #endregion
 
     #region IComDispatchProxyの実装
-    private bool _hasReleased = false;
-    public bool WasReleased => this._hasReleased;
+    private bool _wasReleased = false;
+    public bool WasReleased => this._wasReleased;
 
     public T Proxy
     {
@@ -305,7 +305,7 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
 #pragma warning disable CA1416 // OS互換性警告を無視
             Marshal.ReleaseComObject(_comObject.Value);
 #pragma warning restore CA1416
-            this._hasReleased = true;
+            this._wasReleased = true;
 
             // ParentProxyのChildProxiesから自分自身を削除。
             // この処理のために上ではCopyを作ってループしている。
