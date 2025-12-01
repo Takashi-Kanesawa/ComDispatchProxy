@@ -1,5 +1,6 @@
 ﻿using Excel = Microsoft.Office.Interop.Excel;
 using ComDispatchProxy;
+using ComDispatchProxy.ProxyFactories;
 
 
 var excelFactory = new InteropExcelProxyFactory("ExcelInterfaces.xml");
