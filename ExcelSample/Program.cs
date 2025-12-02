@@ -2,6 +2,7 @@
 using ComDispatchProxy;
 using ComDispatchProxy.ProxyFactories;
 
+ComProxyLogConfig.Enabled = true;
 
 var excelFactory = new InteropExcelProxyFactory("ExcelInterfaces.xml");
 

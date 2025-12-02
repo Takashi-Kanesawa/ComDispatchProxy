@@ -85,10 +85,10 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
         // 未処理例外発生時のハンドリング
         AppDomain.CurrentDomain.UnhandledException += (sender, e) =>
         {
-            Debug.WriteLine("[ERROR] Unhandled exception occurred.");
+            ComProxyLog.Write("[ComDispatchProxy ERR] Unhandled exception occurred.");
             if (e.ExceptionObject is Exception ex)
             {
-                Debug.WriteLine($"Exception details: {ex}");
+                ComProxyLog.Write($"Exception details: {ex}");
             }
             HandleApplicationExit("UnhandledException", this);
         };
@@ -156,7 +156,7 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
 
         proxy.Initialize(proxyFactory, parentObject, proxy, comObject);
 
-        Debug.WriteLine($"[LOG] ComDispatchProxy is created as '{typeof(T)}'");
+        ComProxyLog.Write($"[ComDispatchProxy CREATED] ComDispatchProxy is created as '{typeof(T)}'");
         return proxy;
     }
     #endregion
@@ -177,14 +177,14 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
         // 引数内のプロキシを解除し、元の COM オブジェクトに戻す
         UnwrapProxiesInArgs(args);
 
-        Debug.WriteLine($"[LOG] Invoking '{method.Name}' on {_objectName.Value} with args: {FormatArgs(args)}");
+        ComProxyLog.Write($"[ComDispatchProxy LOG] Invoking '{method.Name}' on {_objectName.Value} with args: {FormatArgs(args)}");
 
         try
         {
             var result = method.Invoke(_comObject.Value, args);
             if (result == null)
             {
-                Debug.WriteLine($"[LOG] Method '{method.Name}' returned null.");
+                ComProxyLog.Write($"[ComDispatchProxy LOG] Method '{method.Name}' returned null.");
                 return null;
             }
 
@@ -192,12 +192,12 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
         }
         catch (TargetInvocationException ex)
         {
-            Debug.WriteLine($"[ERROR] Exception in '{method.Name}': {ex.InnerException?.Message}");
+            ComProxyLog.Write($"[ComDispatchProxy ERR] Exception in '{method.Name}': {ex.InnerException?.Message}");
             throw ex.InnerException ?? ex;
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[ERROR] Exception in '{method.Name}': {ex.Message}");
+            ComProxyLog.Write($"[ComDispatchProxy ERR] Exception in '{method.Name}': {ex.Message}");
             throw;
         }
 
@@ -233,7 +233,7 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
             // 返り値が COM オブジェクトの場合、プロキシを作成
             if (Marshal.IsComObject(result))
             {
-                Debug.WriteLine($"[LOG] Wrapping returned COM object from '{method.Name}'.");
+                ComProxyLog.Write($"[ComDispatchProxy LOG] Wrapping returned COM object from '{method.Name}'.");
 
                 var childProxy = this.ProxyFactory.CreateProxyByFactoryFunction(result, this);
                 if (childProxy is IComDispatchProxy dispatchProxy)
@@ -311,7 +311,7 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
             // この処理のために上ではCopyを作ってループしている。
             this.ParentProxy?.RemoveChild(this);
 
-            Debug.WriteLine($"{this._objectName} has been released.");
+            ComProxyLog.Write($"[ComDispatchProxy RELEASED]{this._objectName} has been released.");
         }
 
     }
