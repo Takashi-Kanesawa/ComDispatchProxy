@@ -40,7 +40,7 @@ public abstract class ComProxyFactoryBase : IComProxyFactory
                     continue;
                 }
 
-                factoryFunctionDictionary[type] = (obj, parentObj) => CreateProxyForType(type, obj, parentObj);
+                factoryFunctionDictionary[type] = (obj, parentObj) => this.CreateProxyForType(type, obj, parentObj);
                 ComProxyLog.Write($"[ComDispatchProxy LOG] Registered proxy for {type.FullName}");
             }
         }
