@@ -12,20 +12,16 @@ public abstract class ComProxyFactoryBase : IComProxyFactory
 
     protected abstract string TargetAssemblyName { get; }
 
-    protected abstract IEnumerable<Type> GetUsedTypes();
-
     /// <summary>
     /// XML ファイルから対象の COM インターフェイスを読み込み、ProxyCreators を初期化
     /// </summary>
-    public ComProxyFactoryBase(string xmlPath)
+    public ComProxyFactoryBase(string xmlPath, IEnumerable<Type> usedTypes)
     {
         factoryFunctionDictionary.Clear();
 
         var xml = XDocument.Load(xmlPath);
 
         IEnumerable<string> proxyTargetInterfaces = GetTargetInterfaces(xml);
-
-        IEnumerable<Type> usedTypes = GetUsedTypes();
 
         CreateFactoryFunctions(proxyTargetInterfaces, usedTypes);
 

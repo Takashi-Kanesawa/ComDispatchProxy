@@ -4,14 +4,13 @@ using ComDispatchProxy.ProxyFactories;
 
 ComProxyLogConfig.Enabled = true;
 
-var excelFactory = new InteropExcelProxyFactory(@"Config\ExcelInterfaces.xml");
+var excelFactory = new InteropExcelProxyFactory(@"Config\ExcelInterfaces.xml", typeof(Excel.Application).Assembly.GetTypes());
 
 // Excel アプリケーションのインスタンスを作成し、ComDispatchProxy を介して管理する
 using (var excelAppRoot = ComDispatchProxy<Excel.Application>.CreateProxy(excelFactory, new Excel.Application()))
 {
     var excelApp = excelAppRoot.Proxy;
 
-    // 個別のオブジェクトは、暗黙的に呼び出されるCOMインターフェイスもあるため、Proxy経由で取得する
     var wbs = excelApp.Workbooks;
     var wb = wbs?.Add();
     var wss = wb?.Worksheets;

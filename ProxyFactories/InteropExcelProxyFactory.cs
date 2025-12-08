@@ -6,13 +6,7 @@ public class InteropExcelProxyFactory : ComProxyFactoryBase
 {
     protected sealed override string TargetAssemblyName => "Microsoft.Office.Interop.Excel";
 
-    public InteropExcelProxyFactory(string xmlPath) : base(xmlPath)
+    public InteropExcelProxyFactory(string xmlPath, IEnumerable<Type> usedTypes) : base(xmlPath, usedTypes)
     {
-    }
-
-    protected override IEnumerable<Type> GetUsedTypes()
-    {
-        return typeof(Excel.Application).Assembly.GetTypes()
-            .Where(t => t.IsInterface && t.Namespace == TargetAssemblyName);
     }
 }
