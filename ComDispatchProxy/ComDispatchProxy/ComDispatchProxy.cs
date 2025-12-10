@@ -13,7 +13,7 @@ namespace ComDispatchProxy;
 /// COMオブジェクトのプロキシを作成し、メソッド呼び出しを中継するためのクラス。
 /// </summary>
 /// <typeparam name="T">プロキシ化するCOMオブジェクトの型。</typeparam>
-public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : class
+public sealed class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : class
 {
     #region private field
     private Lazy<T> _comObject;
@@ -261,6 +261,7 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
             }
         }
     }
+
     // スタックトレースのフィルタリングメソッド
     private static string filterStackTrace(string stackTrace)
     {
@@ -287,7 +288,7 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
         GC.SuppressFinalize(this); // デストラクタをスキップ
     }
 
-    protected virtual void Dispose(bool disposing)
+    protected void Dispose(bool disposing)
     {
         lock (this._childProxies)
         {
