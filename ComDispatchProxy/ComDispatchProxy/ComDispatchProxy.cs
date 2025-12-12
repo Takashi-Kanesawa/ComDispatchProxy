@@ -13,14 +13,13 @@ namespace ComDispatchProxy;
 /// COMオブジェクトのプロキシを作成し、メソッド呼び出しを中継するためのクラス。
 /// </summary>
 /// <typeparam name="T">プロキシ化するCOMオブジェクトの型。</typeparam>
-public sealed class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : class
+public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : class
 {
     #region private field
-    private Lazy<T> _comObject;
-    private Lazy<string> _objectName;
-    private Lazy<IComDispatchProxy> _parentProxy;
-    private Lazy<T> _validProxy;
-    private Lazy<IComProxyFactory> _proxyFactory;
+    private T _comObject = null!;
+    private string _objectName = null!;
+    private T _validProxy = null!;
+    private IComProxyFactory _proxyFactory = null!;
     private readonly Dictionary<IComDispatchProxy, string> _childProxies = new();
     #endregion
 
@@ -28,23 +27,27 @@ public sealed class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where
     private bool _wasReleased = false;
     public bool WasReleased => this._wasReleased;
 
+    private bool _disposed = false;
+    public bool DIsposed => this._disposed;
+
+    private bool _isRoot = false;
+    public bool IsRoot => this._isRoot;
+
     public T Proxy
     {
         get
         {
             if (this.WasReleased)
             {
-                throw new InvalidOperationException($"Proxy has been released : {this._objectName.Value}");
+                throw new InvalidOperationException($"Proxy has been released : {this._objectName}");
             }
 
-            return this._validProxy.Value;
+            return this._validProxy;
         }
     }
-    public IComProxyFactory ProxyFactory => this._proxyFactory.Value;
+    public IComProxyFactory ProxyFactory => this._proxyFactory;
 
-    public object? RowObject => this.WasReleased ? null : this._comObject.Value;
-
-    public IComDispatchProxy? ParentProxy => this._parentProxy.IsValueCreated ? this._parentProxy.Value : null;
+    public object? RowObject => this.WasReleased ? null : this._comObject;
 
     public void AddChild(IComDispatchProxy childObject)
     {
@@ -69,13 +72,6 @@ public sealed class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where
     /// </summary>
     public ComDispatchProxy()
     {
-        // Lazyのデフォルト初期化
-        this._proxyFactory = new Lazy<IComProxyFactory>(() => throw new InvalidOperationException("Proxy Factory is not initialized"));
-        this._comObject = new Lazy<T>(() => throw new InvalidOperationException("COM Object is not initialized."));
-        this._objectName = new Lazy<string>(() => throw new InvalidOperationException("Object name is not initialized."));
-        this._validProxy = new Lazy<T>(() => throw new InvalidOperationException("Proxy is not initialized."));
-        this._parentProxy = new Lazy<IComDispatchProxy>(() => throw new InvalidOperationException("Parent proxy is not initialized"));
-
         // アプリケーション終了時の未解放オブジェクトを警告
         AppDomain.CurrentDomain.ProcessExit += (sender, e) =>
         {
@@ -103,36 +99,36 @@ public sealed class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where
     /// <summary>
     /// プロキシを初期化します。
     /// </summary>
-    public void Initialize(IComProxyFactory proxyFactory, object? parentProxy, ComDispatchProxy<T> creatingProxy, T comObject)
+    internal void Initialize(IComProxyFactory proxyFactory, object? parentProxy, ComDispatchProxy<T> creatingProxy, T comObject)
     {
         if (creatingProxy == null)
         {
             throw new ArgumentNullException(nameof(creatingProxy), "Creating Proxy cannnot be null.");
         }
 
-        this._proxyFactory = new Lazy<IComProxyFactory>(() => proxyFactory ?? throw new ArgumentNullException(nameof(proxyFactory)));
-        this._comObject = new Lazy<T>(() => comObject ?? throw new ArgumentNullException(nameof(comObject)));
-        this._objectName = new Lazy<string>(() => typeof(T).FullName ?? string.Empty);
+        this._proxyFactory = proxyFactory ?? throw new ArgumentNullException(nameof(proxyFactory));
+        this._comObject = comObject ?? throw new ArgumentNullException(nameof(comObject));
+        this._objectName = typeof(T).FullName ?? string.Empty;
 
         if (creatingProxy is not T validProxy)
         {
             throw new ArgumentException($"Creating Proxy is not Proxy of {nameof(T)}.", nameof(creatingProxy));
         }
 
-        this._validProxy = new Lazy<T>(validProxy);
+        this._validProxy = validProxy;
 
         // 最上位（Excel.Application）の親は無いので
         if (parentProxy is null)
         {
+            this._isRoot = true;
+
             return;
         }
 
         if (parentProxy is not IComDispatchProxy validParentProxy)
         {
-            throw new ArgumentException($"Parent Object is not a instance of IComDispatchProxy.", nameof(validParentProxy));
+            throw new ArgumentException($"Parent object must be IComDispatchProxy when not null.", nameof(parentProxy));
         }
-
-        this._parentProxy = new Lazy<IComDispatchProxy>(() => validParentProxy ?? throw new ArgumentNullException(nameof(parentProxy)));
     }
 
     public static ComDispatchProxy<T> CreateProxy(IComProxyFactory proxyFactory, T comObject, object? parentObject = null)
@@ -171,17 +167,17 @@ public sealed class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where
         if (method == null)
             throw new ArgumentNullException(nameof(method));
 
-        if (_comObject.Value == null)
+        if (_comObject == null)
             throw new InvalidOperationException("COM Object is not initialized.");
 
         // 引数内のプロキシを解除し、元の COM オブジェクトに戻す
         UnwrapProxiesInArgs(args);
 
-        ComProxyLog.Write($"[ComDispatchProxy LOG] Invoking '{method.Name}' on {_objectName.Value} with args: {FormatArgs(args)}");
+        ComProxyLog.Write($"[ComDispatchProxy LOG] Invoking '{method.Name}' on {_objectName} with args: {FormatArgs(args)}");
 
         try
         {
-            var result = method.Invoke(_comObject.Value, args);
+            var result = method.Invoke(_comObject, args);
             if (result == null)
             {
                 ComProxyLog.Write($"[ComDispatchProxy LOG] Method '{method.Name}' returned null.");
@@ -255,7 +251,7 @@ public sealed class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where
     {
         lock (this._childProxies)
         {
-            if (this.ParentProxy == null && this.WasReleased == false)
+            if (this.IsRoot && this.WasReleased == false)
             {
                 this.Dispose();
             }
@@ -290,31 +286,38 @@ public sealed class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where
 
     protected void Dispose(bool disposing)
     {
-        lock (this._childProxies)
+        lock (_childProxies)
         {
-            // ChildProxyから、要素を削除されるので、CopyのListを作ってループする
-            foreach (var childProxy in this._childProxies.Keys.ToList())
-            {
-                childProxy.Dispose();
-            }
-
-            if (this.WasReleased || Marshal.IsComObject(_comObject.Value) == false)
+            // もう Release 済みなら何もしない（多重呼び出しガード）
+            if (this.WasReleased)
             {
                 return;
             }
 
+            if (disposing)
+            {
+                // マネージ側の子プロキシだけ先に片付ける
+                foreach (var child in _childProxies.Keys.ToList())
+                {
+                    child.Dispose();
+                }
+                _childProxies.Clear();
+            }
+
+            // COM じゃなければ何もしない
+            if (!Marshal.IsComObject(_comObject))
+            {
+                _wasReleased = true; // 一応フラグだけ立てるならここ
+                return;
+            }
+
 #pragma warning disable CA1416 // OS互換性警告を無視
-            Marshal.ReleaseComObject(_comObject.Value);
+            Marshal.ReleaseComObject(_comObject);
 #pragma warning restore CA1416
-            this._wasReleased = true;
 
-            // ParentProxyのChildProxiesから自分自身を削除。
-            // この処理のために上ではCopyを作ってループしている。
-            this.ParentProxy?.RemoveChild(this);
-
-            ComProxyLog.Write($"[ComDispatchProxy RELEASED]{this._objectName} has been released.");
+            _wasReleased = true;
+            ComProxyLog.Write($"[ComDispatchProxy RELEASED]{_objectName} has been released.");
         }
-
     }
 
     /// <summary>

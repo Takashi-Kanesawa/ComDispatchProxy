@@ -8,7 +8,7 @@ namespace ComDispatchProxy;
 
 public abstract class ComProxyFactoryBase : IComProxyFactory
 {
-    private readonly ConcurrentDictionary<Type, Func<object, object, object>> factoryFunctionDictionary = new();
+    private readonly ConcurrentDictionary<Type, Func<object, object, object>> _factoryFunctionDictionary = new();
 
     protected abstract string TargetAssemblyName { get; }
 
@@ -17,7 +17,7 @@ public abstract class ComProxyFactoryBase : IComProxyFactory
     /// </summary>
     public ComProxyFactoryBase(string xmlPath, IEnumerable<Type> usedTypes)
     {
-        factoryFunctionDictionary.Clear();
+        this._factoryFunctionDictionary.Clear();
 
         var xml = XDocument.Load(xmlPath);
 
@@ -36,7 +36,7 @@ public abstract class ComProxyFactoryBase : IComProxyFactory
                     continue;
                 }
 
-                factoryFunctionDictionary[type] = (obj, parentObj) => this.CreateProxyForType(type, obj, parentObj);
+                this._factoryFunctionDictionary[type] = (obj, parentObj) => this.CreateProxyForType(type, obj, parentObj);
                 ComProxyLog.Write($"[ComDispatchProxy LOG] Registered proxy for {type.FullName}");
             }
         }
@@ -67,7 +67,7 @@ public abstract class ComProxyFactoryBase : IComProxyFactory
     public object? CreateProxyByFactoryFunction(object comObject, object parentObject)
     {
         // 1.  `factoryFunctionDictionary` に登録されている型リストを順にチェック。
-        foreach (var (type, factoryFunction) in factoryFunctionDictionary)
+        foreach (var (type, factoryFunction) in this._factoryFunctionDictionary)
         {
             // 2. `comObject` が `type` のインターフェースを実装しているか確認
             if (IsComObjectOfType(comObject, type))

@@ -18,16 +18,24 @@ public interface IComDispatchProxy : IDisposable
     IComProxyFactory ProxyFactory { get; }
 
     /// <summary>
-    /// Dispose済み
+    /// COMオブジェクトをRelease済み
     /// </summary>
     bool WasReleased { get; }
+
+    /// <summary>
+    /// Dispose済み
+    /// </summary>
+    public bool DIsposed { get; }
+
+    /// <summary>
+    /// COMのルート（最上位の親オブジェクト）になるオブジェクトかを判定
+    /// </summary>
+    bool IsRoot { get; }
 
     /// <summary>
     /// 生のCOMオブジェクトを取得します
     /// </summary>
     object? RowObject { get; }
-
-    IComDispatchProxy? ParentProxy { get; }
 
     void AddChild(IComDispatchProxy childObject);
 
