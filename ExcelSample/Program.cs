@@ -4,7 +4,7 @@ using ComDispatchProxy.ProxyFactories;
 
 ComProxyLogConfig.Enabled = true;
 
-var excelFactory = new InteropExcelProxyFactory(@"Config\ExcelInterfaces.xml", typeof(Excel.Application).Assembly.GetTypes());
+var excelFactory = new InteropExcelProxyFactory(typeof(Excel.Application).Assembly.GetTypes());
 
 // Excel アプリケーションのインスタンスを作成し、ComDispatchProxy を介して管理する
 using (var excelAppRoot = ComDispatchProxy<Excel.Application>.CreateProxy(excelFactory, new Excel.Application()))

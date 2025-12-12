@@ -9,9 +9,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Content Include="Config\ExcelInterfaces.xml">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
     <COMReference Include="Microsoft.Office.Interop.Excel">
       <WrapperTool>tlbimp</WrapperTool>
       <VersionMinor>9</VersionMinor>

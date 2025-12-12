@@ -8,37 +8,38 @@ namespace ComDispatchProxy;
 
 public abstract class ComProxyFactoryBase : IComProxyFactory
 {
+    private readonly IReadOnlyCollection<Type> _usedTypes;
+
     private readonly ConcurrentDictionary<Type, Func<object, object, object>> _factoryFunctionDictionary = new();
 
     protected abstract string TargetAssemblyName { get; }
 
     /// <summary>
-    /// XML ファイルから対象の COM インターフェイスを読み込み、ProxyCreators を初期化
+    /// Proxy 対象にする型の列挙。既定は usedTypes をそのまま返す。
+    /// 必要に応じて派生クラスでFilterする。
     /// </summary>
-    public ComProxyFactoryBase(string xmlPath, IEnumerable<Type> usedTypes)
+    protected virtual IEnumerable<Type> FilteredTypes => this._usedTypes;
+
+    /// <summary>
+    /// <paramref name="usedTypes"/>を元にProxyCreators を初期化
+    /// </summary>
+    /// <param name="usedTypes">アセンブリから読み込んだ型情報一覧</param>
+    /// <exception cref="ArgumentNullException"></exception>
+    public ComProxyFactoryBase(IEnumerable<Type> usedTypes)
     {
+        if (usedTypes is null)
+        {
+            throw new ArgumentNullException(nameof(usedTypes));
+        }
+
+        _usedTypes = usedTypes as IReadOnlyCollection<Type> ?? usedTypes.ToArray();
+
         this._factoryFunctionDictionary.Clear();
 
-        var xml = XDocument.Load(xmlPath);
-
-        IEnumerable<string> proxyTargetInterfaces = GetTargetInterfaces(xml);
-
-        CreateFactoryFunctions(proxyTargetInterfaces, usedTypes);
-
-        // -----------------------------------------------------------
-        // ローカル関数：ファクトリ関数を生成して、Dictionaryに登録する
-        void CreateFactoryFunctions(IEnumerable<string> interfaces, IEnumerable< Type> usedTypes)
+        foreach (var type in this.FilteredTypes)
         {
-            foreach (var type in usedTypes)
-            {
-                if (type.FullName == null || interfaces.Contains(type.FullName) == false)
-                {
-                    continue;
-                }
-
-                this._factoryFunctionDictionary[type] = (obj, parentObj) => this.CreateProxyForType(type, obj, parentObj);
-                ComProxyLog.Write($"[ComDispatchProxy LOG] Registered proxy for {type.FullName}");
-            }
+            this._factoryFunctionDictionary[type] = (obj, parentObj) => this.CreateProxyForType(type, obj, parentObj);
+            ComProxyLog.Write($"[ComDispatchProxy LOG] Registered proxy for {type.FullName}");
         }
     }
 
