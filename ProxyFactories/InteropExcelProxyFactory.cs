@@ -1,6 +1,4 @@
-﻿using Excel = Microsoft.Office.Interop.Excel;
-
-namespace ComDispatchProxy.ProxyFactories;
+﻿namespace ComDispatchProxy.ProxyFactories;
 
 public class InteropExcelProxyFactory : ComProxyFactoryBase
 {

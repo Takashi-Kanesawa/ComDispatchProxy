@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace ComDispatchProxy;
+﻿namespace ComDispatchProxy;
 
 #region IComDispatchProxy インターフェイス定義
 /// <summary>

@@ -11,6 +11,7 @@
 
     <Authors>T.Kanesawa</Authors>
     <Description>Excel Interop DispatchProxy wrapper (includes core ComDispatchProxy)</Description>
+    <PackageReadmeFile>Readme.md</PackageReadmeFile>
   </PropertyGroup>
 
   <!-- Release ビルドのときだけ nupkg を作る -->
@@ -29,6 +30,7 @@
       <Isolated>false</Isolated>
       <EmbedInteropTypes>true</EmbedInteropTypes>
     </COMReference>
+    <None Include="Readme.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
   <!-- Debug ビルドのとき：ソースを直接参照 -->

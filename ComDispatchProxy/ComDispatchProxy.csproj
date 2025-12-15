@@ -12,6 +12,7 @@
 
     <Authors>T.Kanesawa</Authors>
     <Description>Base of COM DispatchProxy wrapper </Description>
+    <PackageReadmeFile>Readme.md</PackageReadmeFile>
   </PropertyGroup>
 
   <!-- Release ビルドのときだけ nupkg を作る -->
@@ -20,4 +21,7 @@
     <PackageOutputPath>..\nuget_local</PackageOutputPath>
   </PropertyGroup>
 
+  <ItemGroup>
+    <None Include="Readme.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 </Project>
