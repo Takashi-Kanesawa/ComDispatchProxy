@@ -74,9 +74,6 @@ public sealed class MyComProxyFactory : ComProxyFactoryBase
 > このケースは「例外パス」であり、そのオブジェクトは 自動解放ツリーの管理対象外になります（必要なら呼び出し側で解放してください）。  
 > ※ usedTypes に余分な型が含まれている場合は、FilteredTypes 側で対象を限定してください。
 
-> ✅ `ComProxyFactoryBase.CreateProxyByFactoryFunction()` は、`usedTypes` に一致する型が見つからなければ **元の COM オブジェクトをそのまま返します**。  
-> つまり、**`usedTypes` に含めていない型で返ってきた COM は自動解放の管理対象外**になります（必要なら自分で解放してください）。
-
 ---
 
 ## ログ

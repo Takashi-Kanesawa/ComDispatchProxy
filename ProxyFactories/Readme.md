@@ -88,6 +88,24 @@ Interop.Excel の環境によっては `_Application` など **`_` 付きの型�
 
 ---
 
+## Tips: `object` が返る API と型の勘違いに注意
+
+Excel Interop には、コレクションの `Item`（インデクサ）などが `object` を返す箇所があります（例: `Workbook.Worksheets` は型として `Excel.Sheets` を返し、`Sheets[1]` は `object` です）。
+
+`object` のままだと IntelliSense が効きづらいだけでなく、**「返ってくる実体の型を勘違いしている」ことに気づきにくい**のが地味に危険です。
+（例えば `Sheets` には `Worksheet` だけでなく `Chart` が含まれる場合があり、`(Excel.Worksheet)sheets[1]` が実行時に失敗することがあります）
+
+そのため、必要に応じて明示キャスト（または型チェック）してください。
+
+```csharp
+var sheets = wb.Worksheets;                  // 型は Excel.Sheets
+var ws = (Excel.Worksheet)sheets[1];         // object → Worksheet に明示キャスト
+// あるいは安全寄りに:
+// if (sheets[1] is Excel.Worksheet ws) { ... }
+```
+
+---
+
 ## 未検証事項
 
 - この Factory を Excel 以外（Word/PowerPoint 等）に転用した場合の動作
