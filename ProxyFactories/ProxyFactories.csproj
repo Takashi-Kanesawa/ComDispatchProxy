@@ -10,7 +10,7 @@
     <Version>0.1.0</Version>
 
     <Authors>T.Kanesawa</Authors>
-    <Description>Excel Interop DispatchProxy wrapper (includes core ComDispatchProxy)</Description>
+    <Description>Excel Interop DispatchProxy wrapper (depends on ComDispatchProxy)</Description>
     <PackageReadmeFile>Readme.md</PackageReadmeFile>
   </PropertyGroup>
 
@@ -34,8 +34,11 @@
   </ItemGroup>
 
   <!-- Debug ビルドのとき：ソースを直接参照 -->
-  <ItemGroup>
+  <ItemGroup Condition="'$(Configuration)' == 'Debug'">
     <ProjectReference Include="..\ComDispatchProxy\ComDispatchProxy.csproj" />
   </ItemGroup>
- 
+  <!-- Release: パッケージ依存を明示 -->
+  <ItemGroup Condition="'$(Configuration)' == 'Release'">
+    <PackageReference Include="ComDispatchProxy" Version="$(Version)" />
+  </ItemGroup> 
 </Project>
