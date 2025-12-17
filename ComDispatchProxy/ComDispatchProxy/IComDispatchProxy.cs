@@ -17,11 +17,6 @@ public interface IComDispatchProxy : IDisposable
     bool WasReleased { get; }
 
     /// <summary>
-    /// Dispose済み
-    /// </summary>
-    public bool DIsposed { get; }
-
-    /// <summary>
     /// COMのルート（最上位の親オブジェクト）になるオブジェクトかを判定
     /// </summary>
     bool IsRoot { get; }

@@ -57,6 +57,7 @@ public abstract class ComProxyFactoryBase : IComProxyFactory
     ///
     /// 1. `factoryFunctionDictionary` に登録されている型リストを順にチェック。
     /// 2. `IsComObjectOfType()` を使用して `comObject` がその型 (`type`) を実装しているか判定。
+    ///      親がSessionを持つなら、RCW→Proxyをキャッシュ
     /// 3. 一致する型が見つかれば、その型に対応する `factoryFunction` メソッドを呼び出してプロキシを生成し返す。
     /// 4. 一致する型が見つからなければ、`comObject` をそのまま返す。
     /// </summary>
@@ -73,6 +74,29 @@ public abstract class ComProxyFactoryBase : IComProxyFactory
             if (IsComObjectOfType(comObject, type))
             {
                 ComProxyLog.Write($"[ComDispatchProxy LOG] Creating proxy for type: {type.FullName}");
+
+                // 親がSessionを持つなら、RCW→Proxyをキャッシュ
+                if (parentObject is IComProxySessionProvider sp)
+                {
+                    var session = sp.Session;
+
+                    if (session.TryGet(type, comObject, out var cached))
+                    {
+                        return cached;
+                    }
+
+                    var created = factoryFunction(comObject, parentObject);
+
+                    // factoryFunctionが「そのまま返す」系ならキャッシュしない
+                    if (created != null &&
+                        ReferenceEquals(created, comObject) == false &&
+                        created is IComDispatchProxy)
+                    {
+                        session.Put(type, comObject, created);
+                    }
+
+                    return created;
+                }
 
                 // 3. 一致する型が見つかれば、その型に対応する `factoryFunction` メソッドを呼び出してプロキシを生成
                 return factoryFunction(comObject, parentObject);

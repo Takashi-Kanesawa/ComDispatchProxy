@@ -12,7 +12,7 @@ namespace ComDispatchProxy;
 /// COMオブジェクトのプロキシを作成し、メソッド呼び出しを中継するためのクラス。
 /// </summary>
 /// <typeparam name="T">プロキシ化するCOMオブジェクトの型。</typeparam>
-public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : class
+public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy, IComProxySessionProvider where T : class
 {
     #region private field
     private T _comObject = null!;
@@ -20,14 +20,13 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
     private T _validProxy = null!;
     private IComProxyFactory _proxyFactory = null!;
     private readonly Dictionary<IComDispatchProxy, string> _childProxies = new();
+    private ComProxySession _session = null!;
+    ComProxySession IComProxySessionProvider.Session => _session;
     #endregion
 
     #region IComDispatchProxyの実装
     private bool _wasReleased = false;
     public bool WasReleased => this._wasReleased;
-
-    private bool _disposed = false;
-    public bool DIsposed => this._disposed;
 
     private bool _isRoot = false;
     public bool IsRoot => this._isRoot;
@@ -52,7 +51,10 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
     {
         lock (_childProxies)
         {
-            _childProxies.Add(childObject, filterStackTrace(Environment.StackTrace));
+            if (_childProxies.ContainsKey(childObject) == false)
+            {
+                _childProxies.Add(childObject, filterStackTrace(Environment.StackTrace));
+            }
         }
     }
 
@@ -120,6 +122,7 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
         if (parentProxy is null)
         {
             this._isRoot = true;
+            this._session = new ComProxySession();
 
             return;
         }
@@ -128,6 +131,13 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
         {
             throw new ArgumentException($"Parent object must be IComDispatchProxy when not null.", nameof(parentProxy));
         }
+
+        if (parentProxy is not IComProxySessionProvider sp)
+        {
+            throw new ArgumentException($"Parent object must implement {nameof(IComProxySessionProvider)}.", nameof(parentProxy));
+        }
+
+        this._session = sp.Session;
     }
 
     public static ComDispatchProxy<T> CreateProxy(IComProxyFactory proxyFactory, T comObject, object? parentObject = null)
@@ -301,6 +311,11 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
                     child.Dispose();
                 }
                 _childProxies.Clear();
+
+                if (this.IsRoot)
+                {
+                    _session?.Dispose();
+                }
             }
 
             // COM じゃなければ何もしない

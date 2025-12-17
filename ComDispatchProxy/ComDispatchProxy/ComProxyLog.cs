@@ -1,4 +1,6 @@
-﻿namespace ComDispatchProxy
+﻿using System.Diagnostics;
+
+namespace ComDispatchProxy
 {
     internal static class ComProxyLog
     {
