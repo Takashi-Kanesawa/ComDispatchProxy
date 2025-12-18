@@ -24,7 +24,7 @@ public interface IComDispatchProxy : IDisposable
     /// <summary>
     /// 生のCOMオブジェクトを取得します
     /// </summary>
-    object? RowObject { get; }
+    internal object? RowObject { get; }
 
     void AddChild(IComDispatchProxy childObject);
 
