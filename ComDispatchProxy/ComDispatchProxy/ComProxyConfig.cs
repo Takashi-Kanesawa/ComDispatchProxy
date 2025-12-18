@@ -8,5 +8,8 @@
         /// ※このフラグ自体は1番ではまだ参照されません。次のステップで Dispose 側に反映します。
         /// </summary>
         public static bool AggressiveReleaseComObjects { get; set; } = false;
+
+        public static bool EnableAppDomainCleanupHandlers { get; set; } = false;
+
     }
 }

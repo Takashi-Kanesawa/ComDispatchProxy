@@ -73,28 +73,6 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy, IComProxySe
     /// </summary>
     public ComDispatchProxy()
     {
-        // アプリケーション終了時の未解放オブジェクトを警告
-        AppDomain.CurrentDomain.ProcessExit += (sender, e) =>
-        {
-            HandleApplicationExit("ProcessExit", this);
-        };
-
-        // 未処理例外発生時のハンドリング
-        AppDomain.CurrentDomain.UnhandledException += (sender, e) =>
-        {
-            ComProxyLog.Write("[ComDispatchProxy ERR] Unhandled exception occurred.");
-            if (e.ExceptionObject is Exception ex)
-            {
-                ComProxyLog.Write($"Exception details: {ex}");
-            }
-            HandleApplicationExit("UnhandledException", this);
-        };
-
-        // アプリケーション終了時のハンドリング
-        static void HandleApplicationExit(string reason, ComDispatchProxy<T> proxy)
-        {
-            proxy.DisposeIfRoot();
-        }
     }
 
     /// <summary>
@@ -160,6 +138,11 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy, IComProxySe
         }
 
         proxy.Initialize(proxyFactory, parentObject, proxy, comObject);
+
+        if (parentObject is null)
+        {
+            ComProxyAppDomainHook.RegisterRoot(proxy);
+        }
 
         ComProxyLog.Write($"[ComDispatchProxy CREATED] ComDispatchProxy is created as '{typeof(T)}'");
         return proxy;
@@ -290,7 +273,11 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy, IComProxySe
     public void Dispose()
     {
         Dispose(true);
-        GC.SuppressFinalize(this); // デストラクタをスキップ
+
+        if (ComProxyConfig.AggressiveReleaseComObjects)
+        {
+            GC.SuppressFinalize(this); // デストラクタをスキップ
+        }
     }
 
     protected void Dispose(bool disposing)
@@ -325,12 +312,21 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy, IComProxySe
                 return;
             }
 
+            if (ComProxyConfig.AggressiveReleaseComObjects)
+            {
 #pragma warning disable CA1416 // OS互換性警告を無視
-            Marshal.ReleaseComObject(_comObject);
+                Marshal.ReleaseComObject(_comObject);
 #pragma warning restore CA1416
 
-            _wasReleased = true;
-            ComProxyLog.Write($"[ComDispatchProxy RELEASED]{_objectName} has been released.");
+                _wasReleased = true;
+                ComProxyLog.Write($"[ComDispatchProxy RELEASED]{_objectName} has been released.");
+            }
+            else
+            {
+                // ReleaseComObject は呼ばない（RCW/GC に委ねる）
+                _wasReleased = true;
+                ComProxyLog.Write($"[ComDispatchProxy DISPOSED]{_objectName} disposed without ReleaseComObject (AggressiveReleaseComObjects=false).");
+            }
         }
     }
 

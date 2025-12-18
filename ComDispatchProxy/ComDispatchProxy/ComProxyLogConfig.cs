@@ -13,5 +13,6 @@
             get => ComProxyLog.Writer;
             set => ComProxyLog.Writer = value;
         }
+
     }
 }
