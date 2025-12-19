@@ -12,21 +12,26 @@ namespace ComDispatchProxy;
 internal sealed class ComProxySession : IDisposable
 {
     private readonly object _gate = new();
-    private bool _disposed;
+    private bool _isDisposed;
 
     // interfaceType ごとに RCW(参照等価) → Proxy(弱参照) をキャッシュ
     private readonly Dictionary<Type, Dictionary<object, WeakReference<object>>> _byInterface = new();
 
     public bool IsDisposed
     {
-        get { lock (_gate) return _disposed; }
+        get { lock (_gate) return _isDisposed; }
     }
 
+    public bool AggressiveReleaseComObjects { get; }
+
+    public ComProxySession(bool aggressive)
+        => this.AggressiveReleaseComObjects = aggressive;
+    
     public bool TryGet(Type interfaceType, object rcw, out object proxy)
     {
         lock (_gate)
         {
-            if (_disposed)
+            if (_isDisposed)
             {
                 proxy = null!;
                 return false;
@@ -37,7 +42,7 @@ internal sealed class ComProxySession : IDisposable
                 weak.TryGetTarget(out proxy!))
             {
                 // 既に Release 済みならキャッシュから除去して再生成
-                if (proxy is IComDispatchProxy dp && dp.WasReleased)
+                if (proxy is IComDispatchProxy dp && dp.IsDisposed)
                 {
                     map.Remove(rcw);
                     proxy = null!;
@@ -57,7 +62,7 @@ internal sealed class ComProxySession : IDisposable
     {
         lock (_gate)
         {
-            if (_disposed) return;
+            if (_isDisposed) return;
 
             if (!_byInterface.TryGetValue(interfaceType, out var map))
             {
@@ -74,9 +79,9 @@ internal sealed class ComProxySession : IDisposable
     {
         lock (_gate)
         {
-            if (_disposed) return;
+            if (_isDisposed) return;
             _byInterface.Clear();
-            _disposed = true;
+            _isDisposed = true;
         }
     }
 
@@ -88,7 +93,7 @@ internal sealed class ComProxySession : IDisposable
     }
 }
 
-internal interface IComProxySessionProvider
+public interface IComProxySessionProvider
 {
-    ComProxySession Session { get; }
+    internal ComProxySession Session { get; }
 }

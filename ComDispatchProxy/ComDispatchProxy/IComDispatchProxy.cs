@@ -4,7 +4,7 @@
 /// <summary>
 /// 生のCOMオブジェクトを取得するためのインターフェイス
 /// </summary>
-public interface IComDispatchProxy : IDisposable
+public interface IComDispatchProxy : IComProxySessionProvider, IDisposable
 {
     /// <summary>
     /// 
@@ -12,9 +12,9 @@ public interface IComDispatchProxy : IDisposable
     IComProxyFactory ProxyFactory { get; }
 
     /// <summary>
-    /// COMオブジェクトをRelease済み
+    /// CommDipatechProxyをDispose済み
     /// </summary>
-    bool WasReleased { get; }
+    bool IsDisposed { get; }
 
     /// <summary>
     /// COMのルート（最上位の親オブジェクト）になるオブジェクトかを判定
@@ -24,7 +24,7 @@ public interface IComDispatchProxy : IDisposable
     /// <summary>
     /// 生のCOMオブジェクトを取得します
     /// </summary>
-    internal object? RowObject { get; }
+    internal object? RawRcw { get; }
 
     void AddChild(IComDispatchProxy childObject);
 

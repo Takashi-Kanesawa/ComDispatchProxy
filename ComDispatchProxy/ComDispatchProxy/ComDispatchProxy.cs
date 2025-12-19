@@ -12,10 +12,10 @@ namespace ComDispatchProxy;
 /// COMオブジェクトのプロキシを作成し、メソッド呼び出しを中継するためのクラス。
 /// </summary>
 /// <typeparam name="T">プロキシ化するCOMオブジェクトの型。</typeparam>
-public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy, IComProxySessionProvider where T : class
+public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : class
 {
     #region private field
-    private T _comObject = null!;
+    private T _rcw = null!;
     private string _objectName = null!;
     private T _validProxy = null!;
     private IComProxyFactory _proxyFactory = null!;
@@ -25,8 +25,8 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy, IComProxySe
     #endregion
 
     #region IComDispatchProxyの実装
-    private bool _wasReleased = false;
-    public bool WasReleased => this._wasReleased;
+    private bool _isDisposed = false;
+    public bool IsDisposed => this._isDisposed;
 
     private bool _isRoot = false;
     public bool IsRoot => this._isRoot;
@@ -35,7 +35,7 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy, IComProxySe
     {
         get
         {
-            if (this.WasReleased)
+            if (this.IsDisposed)
             {
                 throw new InvalidOperationException($"Proxy has been released : {this._objectName}");
             }
@@ -45,7 +45,7 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy, IComProxySe
     }
     public IComProxyFactory ProxyFactory => this._proxyFactory;
 
-    public object? RowObject => this.WasReleased ? null : this._comObject;
+    object? IComDispatchProxy.RawRcw  => this.IsDisposed ? null : this._rcw;
 
     public void AddChild(IComDispatchProxy childObject)
     {
@@ -78,74 +78,76 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy, IComProxySe
     /// <summary>
     /// プロキシを初期化します。
     /// </summary>
-    internal void Initialize(IComProxyFactory proxyFactory, object? parentProxy, ComDispatchProxy<T> creatingProxy, T comObject)
+    internal void Initialize(
+        IComProxyFactory proxyFactory,
+        T validProxy,
+        T rcw,
+        ComProxySession session,
+        bool isRoot)
     {
-        if (creatingProxy == null)
-        {
-            throw new ArgumentNullException(nameof(creatingProxy), "Creating Proxy cannnot be null.");
-        }
+        _proxyFactory = proxyFactory ?? throw new ArgumentNullException(nameof(proxyFactory));
+        _rcw = rcw ?? throw new ArgumentNullException(nameof(rcw));
+        _objectName = typeof(T).FullName ?? string.Empty;
 
-        this._proxyFactory = proxyFactory ?? throw new ArgumentNullException(nameof(proxyFactory));
-        this._comObject = comObject ?? throw new ArgumentNullException(nameof(comObject));
-        this._objectName = typeof(T).FullName ?? string.Empty;
-
-        if (creatingProxy is not T validProxy)
-        {
-            throw new ArgumentException($"Creating Proxy is not Proxy of {nameof(T)}.", nameof(creatingProxy));
-        }
-
-        this._validProxy = validProxy;
-
-        // 最上位（Excel.Application）の親は無いので
-        if (parentProxy is null)
-        {
-            this._isRoot = true;
-            this._session = new ComProxySession();
-
-            return;
-        }
-
-        if (parentProxy is not IComDispatchProxy validParentProxy)
-        {
-            throw new ArgumentException($"Parent object must be IComDispatchProxy when not null.", nameof(parentProxy));
-        }
-
-        if (parentProxy is not IComProxySessionProvider sp)
-        {
-            throw new ArgumentException($"Parent object must implement {nameof(IComProxySessionProvider)}.", nameof(parentProxy));
-        }
-
-        this._session = sp.Session;
+        _validProxy = validProxy ?? throw new ArgumentNullException(nameof(validProxy));
+        _session = session ?? throw new ArgumentNullException(nameof(session));
+        _isRoot = isRoot;
     }
 
-    public static ComDispatchProxy<T> CreateProxy(IComProxyFactory proxyFactory, T comObject, object? parentObject = null)
+    public static ComDispatchProxy<T> CreateProxy(ComProxyFactoryBase proxyFactory, T comObject)
     {
-        if( proxyFactory == null)
-        {
-            throw new ArgumentNullException(nameof(proxyFactory), "A proxyFactory is required to create a proxy.");
-        }
+        return CreateProxy(proxyFactory, comObject, aggressiveReleaseComObjects: true);
+    }
 
-        if (comObject == null)
-        {
-            throw new ArgumentNullException(nameof(comObject), "Cannot create proxy for a null COM object.");
-        }
+    public static ComDispatchProxy<T> CreateProxy(ComProxyFactoryBase proxyFactory, T comObject, bool aggressiveReleaseComObjects)
+    {
+        return CreateProxyCore(
+            proxyFactory,
+            comObject,
+            parentObject: null,
+            session: new ComProxySession(aggressiveReleaseComObjects));
+    }
 
-        var proxy = Create<T, ComDispatchProxy<T>>() as ComDispatchProxy<T>;
-                                                                                                                                                               
-        if (proxy == null)
-        {
-            throw new InvalidOperationException("Failed to create proxy.");
-        }
-
-        proxy.Initialize(proxyFactory, parentObject, proxy, comObject);
-
+    // 既存：壊さない（Factory側のreflection用）
+    public static ComDispatchProxy<T> CreateProxy(ComProxyFactoryBase proxyFactory, T comObject, IComDispatchProxy? parentObject)
+    {
         if (parentObject is null)
         {
-            ComProxyAppDomainHook.RegisterRoot(proxy);
+            throw new ArgumentException(
+                "Root proxy must be created by CreateProxy(factory, comObject) or CreateProxy(factory, comObject, aggressiveReleaseComObjects).",
+                nameof(parentObject));
+        }
+
+        return CreateProxyCore(proxyFactory, comObject, parentObject, parentObject.Session);
+    }
+
+    private static ComDispatchProxy<T> CreateProxyCore(
+        ComProxyFactoryBase proxyFactory,
+        T comObject,
+        IComDispatchProxy? parentObject,
+        ComProxySession session)
+    {
+        if (proxyFactory is null) throw new ArgumentNullException(nameof(proxyFactory));
+        if (comObject is null) throw new ArgumentNullException(nameof(comObject));
+
+        // DispatchProxy を T として生成
+        T proxyAsT = DispatchProxy.Create<T, ComDispatchProxy<T>>();
+
+        // 実装インスタンス（DispatchProxy本体）を取り出す
+        var impl = (ComDispatchProxy<T>)(object)proxyAsT;
+
+        var isRoot = parentObject is null;
+
+        // Initialize は代入しかしない
+        impl.Initialize(proxyFactory, proxyAsT, comObject, session, isRoot);
+
+        if (isRoot)
+        {
+            ComProxyAppDomainHook.RegisterRoot(impl);
         }
 
         ComProxyLog.Write($"[ComDispatchProxy CREATED] ComDispatchProxy is created as '{typeof(T)}'");
-        return proxy;
+        return impl;
     }
     #endregion
 
@@ -159,7 +161,7 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy, IComProxySe
         if (method == null)
             throw new ArgumentNullException(nameof(method));
 
-        if (_comObject == null)
+        if (_rcw == null)
             throw new InvalidOperationException("COM Object is not initialized.");
 
         // 引数内のプロキシを解除し、元の COM オブジェクトに戻す
@@ -169,7 +171,7 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy, IComProxySe
 
         try
         {
-            var result = method.Invoke(_comObject, args);
+            var result = method.Invoke(_rcw, args);
             if (result == null)
             {
                 ComProxyLog.Write($"[ComDispatchProxy LOG] Method '{method.Name}' returned null.");
@@ -209,7 +211,7 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy, IComProxySe
             {
                 if (args[i] is IComDispatchProxy proxy)
                 {
-                    args[i] = proxy.RowObject;
+                    args[i] = proxy.RawRcw;
                 }
             }
         }
@@ -243,7 +245,7 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy, IComProxySe
     {
         lock (this._childProxies)
         {
-            if (this.IsRoot && this.WasReleased == false)
+            if (this.IsRoot && this.IsDisposed == false)
             {
                 this.Dispose();
             }
@@ -274,7 +276,7 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy, IComProxySe
     {
         Dispose(true);
 
-        if (ComProxyConfig.AggressiveReleaseComObjects)
+        if (this._session.AggressiveReleaseComObjects)
         {
             GC.SuppressFinalize(this); // デストラクタをスキップ
         }
@@ -282,10 +284,10 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy, IComProxySe
 
     protected void Dispose(bool disposing)
     {
-        lock (_childProxies)
+        lock (this._childProxies)
         {
             // もう Release 済みなら何もしない（多重呼び出しガード）
-            if (this.WasReleased)
+            if (this.IsDisposed)
             {
                 return;
             }
@@ -297,35 +299,36 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy, IComProxySe
                 {
                     child.Dispose();
                 }
-                _childProxies.Clear();
+                this._childProxies.Clear();
 
                 if (this.IsRoot)
                 {
-                    _session?.Dispose();
+                    this._session.Dispose();
                 }
             }
 
-            // COM じゃなければ何もしない
-            if (!Marshal.IsComObject(_comObject))
+            try
             {
-                _wasReleased = true; // 一応フラグだけ立てるならここ
-                return;
-            }
-
-            if (ComProxyConfig.AggressiveReleaseComObjects)
-            {
+                if (Marshal.IsComObject(this._rcw))
+                {
+                    if (this._session.AggressiveReleaseComObjects)
+                    {
 #pragma warning disable CA1416 // OS互換性警告を無視
-                Marshal.ReleaseComObject(_comObject);
+                        Marshal.ReleaseComObject(this._rcw);
 #pragma warning restore CA1416
-
-                _wasReleased = true;
-                ComProxyLog.Write($"[ComDispatchProxy RELEASED]{_objectName} has been released.");
+                        ComProxyLog.Write($"[ComDispatchProxy RELEASED]{this._objectName} has been released.");
+                    }
+                    else
+                    {
+                        ComProxyLog.Write($"[ComDispatchProxy DISPOSED]{this._objectName} disposed without ReleaseComObject (AggressiveReleaseComObjects=false).");
+                    }
+                }
             }
-            else
+            finally
             {
-                // ReleaseComObject は呼ばない（RCW/GC に委ねる）
-                _wasReleased = true;
-                ComProxyLog.Write($"[ComDispatchProxy DISPOSED]{_objectName} disposed without ReleaseComObject (AggressiveReleaseComObjects=false).");
+                this._isDisposed = true;
+                // 参照も切ってGC対象に寄せる（Aggressive/非Aggressiveどちらでも有益）
+                this._rcw = default!;
             }
         }
     }

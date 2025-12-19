@@ -7,9 +7,9 @@
         /// false の場合、ReleaseComObject は呼ばない（解放タイミングはRCW/GC側に委ねる）。
         /// ※このフラグ自体は1番ではまだ参照されません。次のステップで Dispose 側に反映します。
         /// </summary>
-        public static bool AggressiveReleaseComObjects { get; set; } = false;
+        public static bool AggressiveReleaseComObjects { get; set; } = true;
 
-        public static bool EnableAppDomainCleanupHandlers { get; set; } = false;
+        public static bool EnableAppDomainCleanupHandlers { get; set; } = true;
 
     }
 }

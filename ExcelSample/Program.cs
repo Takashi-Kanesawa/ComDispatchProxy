@@ -40,7 +40,9 @@ static class Native
 
         {
             // ここをメソッド内に閉じ込めるのが重要（ローカル参照が外に残らない）
-            using (var root = ComDispatchProxy<Excel.Application>.CreateProxy(excelFactory, new Excel.Application()))
+            using (var root = ComDispatchProxy<Excel.Application>.CreateProxy(
+                    excelFactory,
+                    new Excel.Application()))
             {
                 var app = root.Proxy;
 
