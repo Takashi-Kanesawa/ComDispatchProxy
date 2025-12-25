@@ -1,10 +1,8 @@
-﻿using System;
+﻿using ComDispatchProxy;
+using ComDispatchProxy.ProxyFactories;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Excel = Microsoft.Office.Interop.Excel;
-using ComDispatchProxy;
-using ComDispatchProxy.ProxyFactories;
-using System.ComponentModel.Design.Serialization;
 
 Native.RunOnce(aggressive: true);
 Console.WriteLine();

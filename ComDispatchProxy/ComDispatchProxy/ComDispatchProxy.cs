@@ -101,7 +101,7 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
 
     public static ComDispatchProxy<T> CreateProxy(ComProxyFactoryBase proxyFactory, T comObject, bool aggressiveReleaseComObjects)
     {
-        return CreateProxyCore(
+        return CreateProxyInternal(
             proxyFactory,
             comObject,
             parentObject: null,
@@ -118,14 +118,15 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
                 nameof(parentObject));
         }
 
-        return CreateProxyCore(proxyFactory, comObject, parentObject, parentObject.Session);
+        return CreateProxyInternal(proxyFactory, comObject, parentObject, parentObject.Session, isRoot : false);
     }
 
-    private static ComDispatchProxy<T> CreateProxyCore(
+    private static ComDispatchProxy<T> CreateProxyInternal(
         ComProxyFactoryBase proxyFactory,
         T comObject,
         IComDispatchProxy? parentObject,
-        ComProxySession session)
+        ComProxySession session,
+        bool isRoot = true)
     {
         if (proxyFactory is null) throw new ArgumentNullException(nameof(proxyFactory));
         if (comObject is null) throw new ArgumentNullException(nameof(comObject));
@@ -135,8 +136,6 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
 
         // 実装インスタンス（DispatchProxy本体）を取り出す
         var impl = (ComDispatchProxy<T>)(object)proxyAsT;
-
-        var isRoot = parentObject is null;
 
         // Initialize は代入しかしない
         impl.Initialize(proxyFactory, proxyAsT, comObject, session, isRoot);
@@ -292,23 +291,23 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
                 return;
             }
 
-            if (disposing)
-            {
-                // マネージ側の子プロキシだけ先に片付ける
-                foreach (var child in _childProxies.Keys.ToList())
-                {
-                    child.Dispose();
-                }
-                this._childProxies.Clear();
-
-                if (this.IsRoot)
-                {
-                    this._session.Dispose();
-                }
-            }
-
             try
             {
+                if (disposing)
+                {
+                    // マネージ側の子プロキシだけ先に片付ける
+                    foreach (var child in _childProxies.Keys.ToList())
+                    {
+                        child.Dispose();
+                    }
+                    this._childProxies.Clear();
+
+                    if (this.IsRoot)
+                    {
+                        this._session.Dispose();
+                    }
+                }
+
                 if (Marshal.IsComObject(this._rcw))
                 {
                     if (this._session.AggressiveReleaseComObjects)
@@ -329,6 +328,8 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
                 this._isDisposed = true;
                 // 参照も切ってGC対象に寄せる（Aggressive/非Aggressiveどちらでも有益）
                 this._rcw = default!;
+                this._proxyFactory = default!;
+                this._validProxy = default!;
             }
         }
     }
