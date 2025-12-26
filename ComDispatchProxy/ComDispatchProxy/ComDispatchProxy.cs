@@ -1,7 +1,6 @@
 ﻿#region usings
 using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Text.RegularExpressions;
 
 #endregion
 
@@ -19,7 +18,7 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
     private string _objectName = null!;
     private T _validProxy = null!;
     private IComProxyFactory _proxyFactory = null!;
-    private readonly Dictionary<IComDispatchProxy, string> _childProxies = new();
+    private readonly object _disposeGate = new(); // ChildProxies廃止後のDisposeガード用
     private ComProxySession _session = null!;
     ComProxySession IComProxySessionProvider.Session => _session;
     #endregion
@@ -35,9 +34,9 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
     {
         get
         {
-            if (this.IsDisposed)
+            if (this.IsDisposed || this._session.IsDisposed)
             {
-                throw new InvalidOperationException($"Proxy has been released : {this._objectName}");
+                throw new ObjectDisposedException(this._objectName);
             }
 
             return this._validProxy;
@@ -45,26 +44,9 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
     }
     public IComProxyFactory ProxyFactory => this._proxyFactory;
 
-    object? IComDispatchProxy.RawRcw  => this.IsDisposed ? null : this._rcw;
+    object? IComDispatchProxy.RawRcw => (this.IsDisposed || this._session.IsDisposed) ? null : this._rcw;
 
-    public void AddChild(IComDispatchProxy childObject)
-    {
-        lock (_childProxies)
-        {
-            if (_childProxies.ContainsKey(childObject) == false)
-            {
-                _childProxies.Add(childObject, filterStackTrace(Environment.StackTrace));
-            }
-        }
-    }
-
-    public void RemoveChild(IComDispatchProxy childObject)
-    {
-        lock (_childProxies)
-        {
-            _childProxies.Remove(childObject);
-        }
-    }
+    string IComDispatchProxy.ComObjectName => this._objectName;
     #endregion
 
     #region コンストラクタ及び初期化処理
@@ -94,13 +76,32 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
         _isRoot = isRoot;
     }
 
-    public static ComDispatchProxy<T> CreateProxy(ComProxyFactoryBase proxyFactory, T comObject)
+    public static ComDispatchProxy<T> CreateProxy(IComProxyFactory proxyFactory, T comObject)
     {
         return CreateProxy(proxyFactory, comObject, aggressiveReleaseComObjects: true);
     }
 
-    public static ComDispatchProxy<T> CreateProxy(ComProxyFactoryBase proxyFactory, T comObject, bool aggressiveReleaseComObjects)
+    public static ComDispatchProxy<T> CreateProxy(
+        IComProxyFactory proxyFactory, 
+        T comObject, 
+        bool aggressiveReleaseComObjects)
+
     {
+        if (proxyFactory is null)
+        {
+            throw new ArgumentNullException(nameof(proxyFactory));
+        }
+
+        if (comObject is null)
+        {
+            throw new ArgumentNullException(nameof(comObject));
+        }
+
+        if (Marshal.IsComObject(comObject) == false)
+        {
+            throw new ArgumentException("comObject must be a COM RCW.", nameof(comObject));
+        }
+
         return CreateProxyInternal(
             proxyFactory,
             comObject,
@@ -109,12 +110,16 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
     }
 
     // 既存：壊さない（Factory側のreflection用）
-    public static ComDispatchProxy<T> CreateProxy(ComProxyFactoryBase proxyFactory, T comObject, IComDispatchProxy? parentObject)
+    public static ComDispatchProxy<T> CreateProxy(
+        IComProxyFactory proxyFactory, 
+        T comObject, 
+        IComDispatchProxy parentObject)
     {
         if (parentObject is null)
         {
             throw new ArgumentException(
-                "Root proxy must be created by CreateProxy(factory, comObject) or CreateProxy(factory, comObject, aggressiveReleaseComObjects).",
+                "Child proxy must be created by CreateProxy(factory, comObject, parentObject). " +
+                "For root, use CreateProxy(factory, comObject) or CreateProxy(factory, comObject, aggressiveReleaseComObjects).",
                 nameof(parentObject));
         }
 
@@ -122,14 +127,21 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
     }
 
     private static ComDispatchProxy<T> CreateProxyInternal(
-        ComProxyFactoryBase proxyFactory,
+        IComProxyFactory proxyFactory,
         T comObject,
         IComDispatchProxy? parentObject,
         ComProxySession session,
         bool isRoot = true)
     {
-        if (proxyFactory is null) throw new ArgumentNullException(nameof(proxyFactory));
-        if (comObject is null) throw new ArgumentNullException(nameof(comObject));
+        if (proxyFactory is null) 
+        {
+            throw new ArgumentNullException(nameof(proxyFactory)); 
+        }
+        
+        if (comObject is null)
+        {
+            throw new ArgumentNullException(nameof(comObject));
+        }
 
         // DispatchProxy を T として生成
         T proxyAsT = DispatchProxy.Create<T, ComDispatchProxy<T>>();
@@ -140,8 +152,9 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
         // Initialize は代入しかしない
         impl.Initialize(proxyFactory, proxyAsT, comObject, session, isRoot);
 
-        if (isRoot)
+        if (isRoot && Marshal.IsComObject(comObject))
         {
+            session.TrackOrReleaseDuplicate(comObject, $"ROOT:{typeof(T).FullName}");
             ComProxyAppDomainHook.RegisterRoot(impl);
         }
 
@@ -155,38 +168,54 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
     /// <summary>
     /// メソッド呼び出しを中継し、取得した COM オブジェクトを適切にラップする。
     /// </summary>
-    protected override object? Invoke(MethodInfo? method, object?[]? args)
+    protected override object? Invoke(MethodInfo? methodInfo, object?[]? args)
     {
-        if (method == null)
-            throw new ArgumentNullException(nameof(method));
+        if (methodInfo == null)
+        {
+            throw new ArgumentNullException(nameof(methodInfo));
+        }
+
+        if (this.IsDisposed || this._session.IsDisposed)
+        {
+            throw new ObjectDisposedException(this._objectName);
+        }
 
         if (_rcw == null)
+        {
             throw new InvalidOperationException("COM Object is not initialized.");
+        }
 
         // 引数内のプロキシを解除し、元の COM オブジェクトに戻す
         UnwrapProxiesInArgs(args);
 
-        ComProxyLog.Write($"[ComDispatchProxy LOG] Invoking '{method.Name}' on {_objectName} with args: {FormatArgs(args)}");
+        ComProxyLog.Write($"[ComDispatchProxy LOG] Invoking '{methodInfo.Name}' on {_objectName} with args: {FormatArgs(args)}");
 
         try
         {
-            var result = method.Invoke(_rcw, args);
+            var result = methodInfo.Invoke(_rcw, args);
             if (result == null)
             {
-                ComProxyLog.Write($"[ComDispatchProxy LOG] Method '{method.Name}' returned null.");
+                ComProxyLog.Write($"[ComDispatchProxy LOG] Method '{methodInfo.Name}' returned null.");
                 return null;
+            }
+
+            // 方針：戻り値COMのみ Track（out/ref・COM配列は無視）
+            if (Marshal.IsComObject(result))
+            {
+                // ここで proxy化できる/できないに関係なく、RCWをセッション管理下へ
+                this._session.TrackOrReleaseDuplicate(result, $"{_objectName}.{methodInfo.Name}");
             }
 
             return WrapProxyIfComObject(result);
         }
         catch (TargetInvocationException ex)
         {
-            ComProxyLog.Write($"[ComDispatchProxy ERR] Exception in '{method.Name}': {ex.InnerException?.Message}");
+            ComProxyLog.Write($"[ComDispatchProxy ERR] Exception in '{methodInfo.Name}': {ex.InnerException?.Message}");
             throw ex.InnerException ?? ex;
         }
         catch (Exception ex)
         {
-            ComProxyLog.Write($"[ComDispatchProxy ERR] Exception in '{method.Name}': {ex.Message}");
+            ComProxyLog.Write($"[ComDispatchProxy ERR] Exception in '{methodInfo.Name}': {ex.Message}");
             throw;
         }
 
@@ -204,13 +233,21 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
         // ローカル関数：引数の COM オブジェクトを生のオブジェクトに戻す
         void UnwrapProxiesInArgs(object?[]? args)
         {
-            if (args == null) return;
+            if (args == null)
+            {
+                return;
+            }
 
             for (int i = 0; i < args.Length; i++)
             {
                 if (args[i] is IComDispatchProxy proxy)
                 {
-                    args[i] = proxy.RawRcw;
+                    var raw = proxy.RawRcw;
+                    if (raw == null)
+                    {
+                        throw new ObjectDisposedException(proxy.ComObjectName);
+                    }
+                    args[i] = raw;
                 }
             }
         }
@@ -222,13 +259,9 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
             // 返り値が COM オブジェクトの場合、プロキシを作成
             if (Marshal.IsComObject(result))
             {
-                ComProxyLog.Write($"[ComDispatchProxy LOG] Wrapping returned COM object from '{method.Name}'.");
+                ComProxyLog.Write($"[ComDispatchProxy LOG] Wrapping returned COM object from '{methodInfo.Name}'.");
 
                 var childProxy = this.ProxyFactory.CreateProxyByFactoryFunction(result, this);
-                if (childProxy is IComDispatchProxy dispatchProxy)
-                {
-                    this.AddChild(dispatchProxy);
-                }
                 return childProxy;
             }
 
@@ -238,35 +271,6 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
 
     #endregion
 
-    #region ヘルパ
-
-    private void DisposeIfRoot()
-    {
-        lock (this._childProxies)
-        {
-            if (this.IsRoot && this.IsDisposed == false)
-            {
-                this.Dispose();
-            }
-        }
-    }
-
-    // スタックトレースのフィルタリングメソッド
-    private static string filterStackTrace(string stackTrace)
-    {
-        Regex[] includesRegex = { new Regex(@"cs:line \d+$") };
-
-        // スタックトレースの行ごとにフィルタリング
-        var filteredStackTrace = string.Join(Environment.NewLine, stackTrace
-            .Split(new[] { Environment.NewLine }, StringSplitOptions.None)
-            .Where(line =>
-                includesRegex.Any(regex => regex.IsMatch(line)) &&
-                line.StartsWith("   at ComDispatchProxy`") == false));
-
-        return filteredStackTrace;
-    }
-    #endregion
-
     #region IDisposable
     /// <summary>
     /// プロキシを解放し、関連リソースを破棄します。
@@ -274,16 +278,12 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
     public void Dispose()
     {
         Dispose(true);
-
-        if (this._session.AggressiveReleaseComObjects)
-        {
-            GC.SuppressFinalize(this); // デストラクタをスキップ
-        }
+        GC.SuppressFinalize(this); // デストラクタをスキップ
     }
 
     protected void Dispose(bool disposing)
     {
-        lock (this._childProxies)
+        lock (this._disposeGate)
         {
             // もう Release 済みなら何もしない（多重呼び出しガード）
             if (this.IsDisposed)
@@ -295,31 +295,9 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
             {
                 if (disposing)
                 {
-                    // マネージ側の子プロキシだけ先に片付ける
-                    foreach (var child in _childProxies.Keys.ToList())
-                    {
-                        child.Dispose();
-                    }
-                    this._childProxies.Clear();
-
-                    if (this.IsRoot)
+                    if (this.IsRoot && this._session.IsDisposed == false)
                     {
                         this._session.Dispose();
-                    }
-                }
-
-                if (Marshal.IsComObject(this._rcw))
-                {
-                    if (this._session.AggressiveReleaseComObjects)
-                    {
-#pragma warning disable CA1416 // OS互換性警告を無視
-                        Marshal.ReleaseComObject(this._rcw);
-#pragma warning restore CA1416
-                        ComProxyLog.Write($"[ComDispatchProxy RELEASED]{this._objectName} has been released.");
-                    }
-                    else
-                    {
-                        ComProxyLog.Write($"[ComDispatchProxy DISPOSED]{this._objectName} disposed without ReleaseComObject (AggressiveReleaseComObjects=false).");
                     }
                 }
             }

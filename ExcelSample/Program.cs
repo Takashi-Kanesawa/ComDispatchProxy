@@ -1,83 +1,50 @@
-﻿using ComDispatchProxy;
+﻿using Excel = Microsoft.Office.Interop.Excel;
+using ComDispatchProxy;
 using ComDispatchProxy.ProxyFactories;
-using System.Diagnostics;
-using System.Runtime.InteropServices;
-using Excel = Microsoft.Office.Interop.Excel;
 
-Native.RunOnce(aggressive: true);
-Console.WriteLine();
-Native.RunOnce(aggressive: false);
-GC.Collect();
-GC.WaitForPendingFinalizers();
-GC.Collect();
+ComProxyLogConfig.Enabled = true;
 
+var excelFactory = new InteropExcelProxyFactory(typeof(Excel.Application).Assembly.GetTypes());
 
-static class Native
+// Excel アプリケーションのインスタンスを作成し、ComDispatchProxy を介して管理する
+using (var excelAppRoot = ComDispatchProxy<Excel.Application>.CreateProxy(excelFactory, new Excel.Application()))
 {
-    [DllImport("user32.dll")]
-    public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+    var excelApp = excelAppRoot.Proxy;
 
-    static int TryGetExcelPid(Excel.Application app)
+    var wbs = excelApp.Workbooks;
+    var wb = wbs?.Add();
+    var wss = wb?.Worksheets;
+    var ws = wss?[1] as Excel.Worksheet; // Excel.Sheetsのインデクサはobject型のため、明示的にExcel.Worksheetにする
+    var targetRange = ws?.Range["A1:A10"];
+    var columns = targetRange?.Columns;
+    var windows = excelApp?.Windows;
+    var window = windows?[1];
     {
-        // Excel.Application.Hwnd は int
-        var hwnd = new IntPtr(app.Hwnd);
-        Native.GetWindowThreadProcessId(hwnd, out var pid);
-        return unchecked((int)pid);
-    }
-
-    public static void RunOnce(bool aggressive)
-    {
-        ComProxyLogConfig.Enabled = true;
-        ComProxyLogConfig.Writer = Console.WriteLine;
-
-        ComProxyConfig.AggressiveReleaseComObjects = aggressive;
-
-        var excelFactory = new InteropExcelProxyFactory(typeof(Excel.Application).Assembly.GetTypes());
-
-        int pid = -1;
-
+        // 全ての必要なオブジェクトが生成されている場合に処理を実行
+        if (excelApp is not null && targetRange is not null && columns is not null && window is not null)
         {
-            // ここをメソッド内に閉じ込めるのが重要（ローカル参照が外に残らない）
-            using (var root = ComDispatchProxy<Excel.Application>.CreateProxy(
-                    excelFactory,
-                    new Excel.Application()))
+            // Excel を可視化する（非表示のままだと高速だが、デバッグ時に表示する方が便利）
+            excelApp.Visible = true;
+
+            // Excel ウィンドウを最大化する
+            window.WindowState = Excel.XlWindowState.xlMaximized;
+
+            // 今日から始まる10日間の日付データを準備（入力テスト用）
+            var startDate = DateTime.Today;
+            var dates = new DateTime[10];
+            for (int i = 0; i < 10; i++)
             {
-                var app = root.Proxy;
-
-                pid = TryGetExcelPid(app);
-                Console.WriteLine($"[TEST] AggressiveRelease={aggressive}  ExcelPID={pid}");
-
-                // なるべく余計なUI要素を作らない（テスト目的）
-                app.Visible = false;
-
-                // 何か触ってから正常終了させる（最小）
-                var wb = app.Workbooks.Add();
-                wb.Close(SaveChanges: false);
-
-                app.Quit();
+                dates[i] = startDate.AddDays(i);
             }
-        }
 
-        // Aggressive=false の場合、ここで GC を促して「すぐ消えるか」を確認
-        // （本番設計として GC を呼ぶかどうかは別議論。テストとしては有効）
-        if (pid > 0)
-        {
-            try
-            {
-                var p = Process.GetProcessById(pid);
+            // 範囲 "A1:A10" のセル書式を「yyyy年mm月dd日」に設定
+            targetRange.NumberFormat = "yyyy年mm月dd日";
 
-                // 少し待ってみる（ここでは最大3秒）
-                if (p.WaitForExit(3000))
-                    Console.WriteLine($"[TEST] Excel exited. PID={pid}");
-                else
-                    Console.WriteLine($"[TEST] Excel still running. PID={pid}");
-            }
-            catch (ArgumentException)
-            {
-                // 既に終了していると GetProcessById が投げる
-                Console.WriteLine($"[TEST] Excel exited (not found). PID={pid}");
-            }
+            // 範囲 "A1:A10" に日付データを一括入力（1セルずつより効率的）
+            targetRange.Value = dates;
+
+            // 列幅を自動調整して内容に合わせる
+            columns.AutoFit();
         }
     }
-
 }

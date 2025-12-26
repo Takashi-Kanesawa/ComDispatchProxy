@@ -75,27 +75,9 @@ public abstract class ComProxyFactoryBase : IComProxyFactory
             {
                 ComProxyLog.Write($"[ComDispatchProxy LOG] Creating proxy for type: {type.FullName}");
 
-                // 親がSessionを持つなら、RCW→Proxyをキャッシュ
                 if (parentObject is IComProxySessionProvider sp)
                 {
-                    var session = sp.Session;
-
-                    if (session.TryGet(type, comObject, out var cached))
-                    {
-                        return cached;
-                    }
-
-                    var created = factoryFunction(comObject, parentObject);
-
-                    // factoryFunctionが「そのまま返す」系ならキャッシュしない
-                    if (created != null &&
-                        ReferenceEquals(created, comObject) == false &&
-                        created is IComDispatchProxy)
-                    {
-                        session.Put(type, comObject, created);
-                    }
-
-                    return created;
+                    return factoryFunction(comObject, parentObject);
                 }
 
                 // 3. 一致する型が見つかれば、その型に対応する `factoryFunction` メソッドを呼び出してプロキシを生成
@@ -181,11 +163,11 @@ public abstract class ComProxyFactoryBase : IComProxyFactory
         // 1. `ComDispatchProxy<T>` のジェネリック型を動的に生成
         var proxyType = typeof(ComDispatchProxy<>).MakeGenericType(interfaceType);
 
-        // 2. `CreateProxy(T comObject, object parentObject)` メソッドを取得
+        // 2. `CreateProxy(IComProxyFactory proxyFactory, T comObject, IComDispatchProxy parentObject)` メソッドを取得
         var createMethod = proxyType.GetMethod("CreateProxy",
             BindingFlags.Static | BindingFlags.Public, // 静的 & 公開メソッドを検索
             null,
-            new Type[] { typeof(IComProxyFactory), interfaceType, typeof(object) }, // メソッドの引数型を指定（T, object）
+            new Type[] { typeof(IComProxyFactory), interfaceType, typeof(IComDispatchProxy) }, // メソッドの引数型を指定
             null);
 
         // メソッドが見つからない場合は例外をスロー
@@ -194,8 +176,14 @@ public abstract class ComProxyFactoryBase : IComProxyFactory
             throw new InvalidOperationException($"Failed to locate 'CreateProxy' method on {proxyType.FullName}");
         }
 
-        // 3. `CreateProxy(T comObject, object parentObject)` を実行してプロキシを作成
-        var proxyInstance = createMethod.Invoke(null, new object[] { this, comObject, parentObject });
+        // 3. `CreateProxy(IComProxyFactory proxyFactory, T comObject, IComDispatchProxy parentObject)` を実行してプロキシを作成
+        if (parentObject is not IComDispatchProxy parentProxy)
+        {
+            throw new InvalidOperationException(
+            $"Parent object must be IComDispatchProxy to create child proxies. actual={parentObject?.GetType().FullName ?? "<null>"}");
+        }
+
+        var proxyInstance = createMethod.Invoke(null, new object[] { this, comObject, parentProxy });
 
         // 生成されたプロキシが `null` の場合は例外をスロー
         if (proxyInstance == null)

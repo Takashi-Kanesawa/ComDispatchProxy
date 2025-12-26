@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 
 namespace ComDispatchProxy;
 
@@ -15,75 +17,145 @@ internal sealed class ComProxySession : IDisposable
     private bool _isDisposed;
 
     // interfaceType ごとに RCW(参照等価) → Proxy(弱参照) をキャッシュ
-    private readonly Dictionary<Type, Dictionary<object, WeakReference<object>>> _byInterface = new();
+    Dictionary<object, WeakReference<IComDispatchProxy>> _proxyCache = null!;
 
-    public bool IsDisposed
+
+    // 追加：RCW の Track（ユニーク + 順序 + 取得元）
+    private readonly HashSet<object> _trackedRcws;
+    private readonly List<object> _trackOrder;
+    private readonly Dictionary<object, OriginInfo> _originByRcw;
+
+    private sealed class OriginInfo
     {
-        get { lock (_gate) return _isDisposed; }
+        public string Context { get; }
+        public string StackTrace { get; }
+        public OriginInfo(string context, string stackTrace)
+        {
+            Context = context;
+            StackTrace = stackTrace;
+        }
     }
+
+    public bool IsDisposed => this._isDisposed;
 
     public bool AggressiveReleaseComObjects { get; }
 
-    public ComProxySession(bool aggressive)
-        => this.AggressiveReleaseComObjects = aggressive;
-    
-    public bool TryGet(Type interfaceType, object rcw, out object proxy)
+    public ComProxySession(bool aggressiveReleaseComObjects)
     {
-        lock (_gate)
-        {
-            if (_isDisposed)
-            {
-                proxy = null!;
-                return false;
-            }
-
-            if (_byInterface.TryGetValue(interfaceType, out var map) &&
-                map.TryGetValue(rcw, out var weak) &&
-                weak.TryGetTarget(out proxy!))
-            {
-                // 既に Release 済みならキャッシュから除去して再生成
-                if (proxy is IComDispatchProxy dp && dp.IsDisposed)
-                {
-                    map.Remove(rcw);
-                    proxy = null!;
-                    return false;
-                }
-
-                ComProxyLog.Write($"[ComDispatchProxy CACHE HIT] {interfaceType.FullName} RCW={RuntimeHelpers.GetHashCode(rcw)} Proxy={RuntimeHelpers.GetHashCode(proxy)}");
-                return true;
-            }
-
-            proxy = null!;
-            return false;
-        }
+        this.AggressiveReleaseComObjects = aggressiveReleaseComObjects;
+        this._proxyCache = new Dictionary<object, WeakReference<IComDispatchProxy>>(ReferenceEqualityComparer.Instance);
+        this._trackedRcws = new HashSet<object>(ReferenceEqualityComparer.Instance);
+        this._trackOrder = new List<object>();
+        this._originByRcw = new Dictionary<object, OriginInfo>(ReferenceEqualityComparer.Instance);
     }
 
-    public void Put(Type interfaceType, object rcw, object proxy)
+    /// <summary>
+    /// 戻り値COMを Track。すでに同じRCWが戻ってきた場合は、その場でReleaseComObject(1回)して増分を相殺する。
+    /// out/ref や COM配列は方針として扱わない。
+    /// </summary>
+    internal bool TrackOrReleaseDuplicate(object rcw, string context)
     {
-        lock (_gate)
+        if (this.IsDisposed) return false;
+        if (rcw is null) return false;
+        if (!Marshal.IsComObject(rcw)) return false;
+
+        if (_trackedRcws.Add(rcw))
         {
-            if (_isDisposed) return;
+            _trackOrder.Add(rcw);
+            var origin = new OriginInfo(context, FilterStackTrace(Environment.StackTrace));
+            _originByRcw[rcw] = origin;
 
-            if (!_byInterface.TryGetValue(interfaceType, out var map))
-            {
-                map = new Dictionary<object, WeakReference<object>>(ReferenceEqualityComparer.Instance);
-                _byInterface[interfaceType] = map;
-            }
-
-            ComProxyLog.Write($"[ComDispatchProxy CACHE PUT] {interfaceType.FullName} RCW={RuntimeHelpers.GetHashCode(rcw)} Proxy={RuntimeHelpers.GetHashCode(proxy)}");
-            map[rcw] = new WeakReference<object>(proxy);
+            ComProxyLog.Write(
+                $"[TRACK #{_trackOrder.Count - 1}] ctx={context} rcwHash={RuntimeHelpers.GetHashCode(rcw)}\n{origin.StackTrace}");
+            return true;
         }
+
+        // duplicate: 参照カウント増分をその場で相殺（Release 1回）
+        _originByRcw.TryGetValue(rcw, out var first);
+#pragma warning disable CA1416 // OS互換性警告を無視
+        int remain = Marshal.ReleaseComObject(rcw);
+#pragma warning restore CA1416
+
+        ComProxyLog.Write(
+            $"[DUP-RELEASE] remain={remain} nowCtx={context} firstCtx={first?.Context ?? "<missing>"} " +
+            $"rcwHash={RuntimeHelpers.GetHashCode(rcw)}\n{first?.StackTrace ?? "<missing stacktrace>"}");
+
+        // remain==0 は「想定より落ちた」シグナル。ここは fail-fast で安全側に倒す。
+        // （必要なら後で設定で抑制できるようにする）
+        if (remain == 0)
+            throw new InvalidOperationException(
+                $"Duplicate RCW release reached 0. nowCtx={context}, firstCtx={first?.Context ?? "<missing>"}");
+
+        return false;
     }
+
 
     public void Dispose()
     {
         lock (_gate)
         {
-            if (_isDisposed) return;
-            _byInterface.Clear();
+            if (_isDisposed)
+            {
+                return;
+            }
+
             _isDisposed = true;
+
+
+            if (AggressiveReleaseComObjects)
+            {
+                ReleaseAllComObjectsInSession();
+            }
+
+            _originByRcw.Clear();
+            _trackOrder.Clear();
+            _trackedRcws.Clear();
+            _proxyCache.Clear();
         }
     }
+
+    private void ReleaseAllComObjectsInSession()
+    {
+        for (int i = _trackOrder.Count - 1; i >= 0; i--)
+        {
+            var rcw = _trackOrder[i];
+            try
+            {
+                if (!Marshal.IsComObject(rcw)) continue;
+                _originByRcw.TryGetValue(rcw, out var origin);
+
+#pragma warning disable CA1416 // OS互換性警告を無視
+                int remain = Marshal.ReleaseComObject(rcw); // ユニークRCWに対し1回だけ
+#pragma warning restore CA1416
+                ComProxyLog.Write(
+                $"[RELEASE #{i}] remain={remain} firstCtx={origin?.Context ?? "<missing>"} " +
+                $"rcwHash={RuntimeHelpers.GetHashCode(rcw)}\n{origin?.StackTrace ?? "<missing stacktrace>"}");
+            }
+            catch (Exception ex)
+            {
+                ComProxyLog.Write($"[RELEASE FAILED #{i}] {ex.GetType().Name}: {ex.Message}");
+            }
+        }
+    }
+
+    #region ヘルパ
+
+    // スタックトレースのフィルタリングメソッド
+    private static string FilterStackTrace(string stackTrace)
+    {
+        Regex[] includesRegex = { new Regex(@"cs:line \d+$") };
+
+        // スタックトレースの行ごとにフィルタリング
+        var filteredStackTrace = string.Join(Environment.NewLine, stackTrace
+            .Split(new[] { Environment.NewLine }, StringSplitOptions.None)
+            .Where(line =>
+                includesRegex.Any(regex => regex.IsMatch(line)) &&
+                line.StartsWith("   at ComDispatchProxy`") == false));
+
+        return filteredStackTrace;
+    }
+    #endregion
+
 
     private sealed class ReferenceEqualityComparer : IEqualityComparer<object>
     {
@@ -91,6 +163,7 @@ internal sealed class ComProxySession : IDisposable
         public new bool Equals(object? x, object? y) => ReferenceEquals(x, y);
         public int GetHashCode(object obj) => RuntimeHelpers.GetHashCode(obj);
     }
+
 }
 
 public interface IComProxySessionProvider

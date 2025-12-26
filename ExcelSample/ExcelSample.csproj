@@ -20,13 +20,14 @@
     </COMReference>
   </ItemGroup>
 
-  <!-- Debug ビルドのとき：ソースを直接参照 -->
+  <ItemGroup>
+    <PackageReference Include="ComDispatchProxy.Excel" Version="0.1.1" />
+  </ItemGroup>
+
+   <!-- Debug ビルドのとき：ソースを直接参照 -->
   <ItemGroup>
     <ProjectReference Include="..\ProxyFactories\ProxyFactories.csproj" />
   </ItemGroup>
 
   <!-- Release ビルドのとき：NuGet パッケージとして参照 -->
-  <ItemGroup Condition="'$(Configuration)' == 'Release'">
-    <PackageReference Include="ComDispatchProxy.Excel" Version="0.1.0" />
-  </ItemGroup>
 </Project>

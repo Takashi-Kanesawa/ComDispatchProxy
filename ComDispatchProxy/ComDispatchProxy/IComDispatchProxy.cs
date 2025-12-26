@@ -26,8 +26,7 @@ public interface IComDispatchProxy : IComProxySessionProvider, IDisposable
     /// </summary>
     internal object? RawRcw { get; }
 
-    void AddChild(IComDispatchProxy childObject);
 
-    void RemoveChild(IComDispatchProxy childObject);
+    internal string ComObjectName { get; }
 }
 #endregion
