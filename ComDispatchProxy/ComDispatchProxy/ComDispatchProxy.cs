@@ -188,14 +188,14 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
         // 引数内のプロキシを解除し、元の COM オブジェクトに戻す
         UnwrapProxiesInArgs(args);
 
-        ComProxyLog.Write($"[ComDispatchProxy LOG] Invoking '{methodInfo.Name}' on {_objectName} with args: {FormatArgs(args)}");
+        ComProxyLog.Write($"Invoking '{methodInfo.Name}' on {_objectName} with args: {FormatArgs(args)}");
 
         try
         {
             var result = methodInfo.Invoke(_rcw, args);
             if (result == null)
             {
-                ComProxyLog.Write($"[ComDispatchProxy LOG] Method '{methodInfo.Name}' returned null.");
+                ComProxyLog.Write($"Method '{methodInfo.Name}' returned null.");
                 return null;
             }
 
@@ -259,7 +259,7 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
             // 返り値が COM オブジェクトの場合、プロキシを作成
             if (Marshal.IsComObject(result))
             {
-                ComProxyLog.Write($"[ComDispatchProxy LOG] Wrapping returned COM object from '{methodInfo.Name}'.");
+                ComProxyLog.Write($"Wrapping returned COM object from '{methodInfo.Name}'.");
 
                 var childProxy = this.ProxyFactory.CreateProxyByFactoryFunction(result, this);
                 return childProxy;

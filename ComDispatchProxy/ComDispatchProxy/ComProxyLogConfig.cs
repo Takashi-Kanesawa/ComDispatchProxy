@@ -14,5 +14,8 @@
             set => ComProxyLog.Writer = value;
         }
 
+        // Enabled=true の場合でも StackTrace の取得を抑止できるようにする
+        // false の場合は Environment.StackTrace を一切呼ばない
+        public static bool CaptureStackTrace { get; set; } = false;
     }
 }

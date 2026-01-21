@@ -38,7 +38,7 @@ public abstract class ComProxyFactoryBase : IComProxyFactory
         foreach (var type in this.FilteredTypes)
         {
             this._factoryFunctionDictionary[type] = (obj, parentObj) => this.CreateProxyForType(type, obj, parentObj);
-            ComProxyLog.Write($"[ComDispatchProxy LOG] Registered proxy for {type.FullName}");
+            ComProxyLog.Write($"Registered proxy for {type.FullName}");
         }
     }
 
@@ -73,7 +73,7 @@ public abstract class ComProxyFactoryBase : IComProxyFactory
             // 2. `comObject` が `type` のインターフェースを実装しているか確認
             if (IsComObjectOfType(comObject, type))
             {
-                ComProxyLog.Write($"[ComDispatchProxy LOG] Creating proxy for type: {type.FullName}");
+                ComProxyLog.Write($"Creating proxy for type: {type.FullName}");
 
                 if (parentObject is IComProxySessionProvider sp)
                 {
@@ -86,7 +86,7 @@ public abstract class ComProxyFactoryBase : IComProxyFactory
         }
 
         // 4. 一致する型が見つからなければ、`comObject` をそのまま返す。
-        ComProxyLog.Write($"[ComDispatchProxy LOG] No matching type found for COM object. Returning original object.");
+        ComProxyLog.Write($"No matching type found for COM object. Returning original object.");
         return comObject;
     }
 

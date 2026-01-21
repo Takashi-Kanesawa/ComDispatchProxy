@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -28,8 +29,8 @@ internal sealed class ComProxySession : IDisposable
     private sealed class OriginInfo
     {
         public string Context { get; }
-        public string StackTrace { get; }
-        public OriginInfo(string context, string stackTrace)
+        public string? StackTrace { get; }
+        public OriginInfo(string context, string? stackTrace)
         {
             Context = context;
             StackTrace = stackTrace;
@@ -62,11 +63,22 @@ internal sealed class ComProxySession : IDisposable
         if (_trackedRcws.Add(rcw))
         {
             _trackOrder.Add(rcw);
-            var origin = new OriginInfo(context, FilterStackTrace(Environment.StackTrace));
-            _originByRcw[rcw] = origin;
+            string? stack = null;
+            if (ComProxyLogConfig.Enabled && ComProxyLogConfig.CaptureStackTrace)
+            {
+                stack = FilterStackTrace(Environment.StackTrace); // ★ここだけが高コスト
+            }
+            var origin = new OriginInfo(context, stack);
+            this._originByRcw[rcw] = origin;
 
-            ComProxyLog.Write(
-                $"[TRACK #{_trackOrder.Count - 1}] ctx={context} rcwHash={RuntimeHelpers.GetHashCode(rcw)}\n{origin.StackTrace}");
+            if (ComProxyLogConfig.Enabled)
+            {
+                if (origin.StackTrace is { Length: > 0 })
+                    ComProxyLog.Write($"[TRACK #{_trackOrder.Count - 1}] ctx={context} rcwHash={RuntimeHelpers.GetHashCode(rcw)}\n{origin.StackTrace}");
+                else
+                    ComProxyLog.Write($"[TRACK #{_trackOrder.Count - 1}] ctx={context} rcwHash={RuntimeHelpers.GetHashCode(rcw)}");
+            }
+
             return true;
         }
 
@@ -76,9 +88,13 @@ internal sealed class ComProxySession : IDisposable
         int remain = Marshal.ReleaseComObject(rcw);
 #pragma warning restore CA1416
 
-        ComProxyLog.Write(
-            $"[DUP-RELEASE] remain={remain} nowCtx={context} firstCtx={first?.Context ?? "<missing>"} " +
-            $"rcwHash={RuntimeHelpers.GetHashCode(rcw)}\n{first?.StackTrace ?? "<missing stacktrace>"}");
+        if (ComProxyLogConfig.Enabled)
+        {
+            if (first?.StackTrace is { Length: > 0 } st)
+                ComProxyLog.Write($"[DUP-RELEASE] remain={remain} nowCtx={context} firstCtx={first?.Context ?? "<missing>"} rcwHash={RuntimeHelpers.GetHashCode(rcw)}\n{st}");
+            else
+                ComProxyLog.Write($"[DUP-RELEASE] remain={remain} nowCtx={context} firstCtx={first?.Context ?? "<missing>"} rcwHash={RuntimeHelpers.GetHashCode(rcw)}");
+        }
 
         // remain==0 は「想定より落ちた」シグナル。ここは fail-fast で安全側に倒す。
         // （必要なら後で設定で抑制できるようにする）
@@ -104,7 +120,7 @@ internal sealed class ComProxySession : IDisposable
 
             if (AggressiveReleaseComObjects)
             {
-                ReleaseAllComObjectsInSession();
+                this.ReleaseAllComObjectsInSession();
             }
 
             _originByRcw.Clear();
@@ -123,13 +139,17 @@ internal sealed class ComProxySession : IDisposable
             {
                 if (!Marshal.IsComObject(rcw)) continue;
                 _originByRcw.TryGetValue(rcw, out var origin);
-
 #pragma warning disable CA1416 // OS互換性警告を無視
                 int remain = Marshal.ReleaseComObject(rcw); // ユニークRCWに対し1回だけ
 #pragma warning restore CA1416
-                ComProxyLog.Write(
-                $"[RELEASE #{i}] remain={remain} firstCtx={origin?.Context ?? "<missing>"} " +
-                $"rcwHash={RuntimeHelpers.GetHashCode(rcw)}\n{origin?.StackTrace ?? "<missing stacktrace>"}");
+
+                if (ComProxyLogConfig.Enabled)
+                {
+                    if (origin?.StackTrace is { Length: > 0 } st)
+                        ComProxyLog.Write($"[RELEASE #{i}] remain={remain} firstCtx={origin?.Context ?? "<missing>"} rcwHash={RuntimeHelpers.GetHashCode(rcw)}\n{st}");
+                    else
+                        ComProxyLog.Write($"[RELEASE #{i}] remain={remain} firstCtx={origin?.Context ?? "<missing>"} rcwHash={RuntimeHelpers.GetHashCode(rcw)}");
+                }
             }
             catch (Exception ex)
             {

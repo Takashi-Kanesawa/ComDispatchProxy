@@ -13,7 +13,12 @@ namespace ComDispatchProxy
 
         internal static void Write(string message)
         {
-            if (!Enabled) return;
+            if (!Enabled)
+            {
+                return;
+            }
+
+            message = $"[ComDispatchProxy LOG] {message}";
 
             if (Writer != null)
             {

@@ -3,6 +3,7 @@ using ComDispatchProxy;
 using ComDispatchProxy.ProxyFactories;
 
 ComProxyLogConfig.Enabled = true;
+ComProxyLogConfig.CaptureStackTrace = true;
 
 var excelFactory = new InteropExcelProxyFactory(typeof(Excel.Application).Assembly.GetTypes());
 
