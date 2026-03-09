@@ -21,7 +21,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="ComDispatchProxy.Excel" Version="0.1.1" />
+    <PackageReference Include="ComDispatchProxy.Excel" Version="0.1.2" />
   </ItemGroup>
 
    <!-- Debug ビルドのとき：ソースを直接参照 -->

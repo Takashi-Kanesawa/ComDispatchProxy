@@ -65,8 +65,11 @@ public abstract class ComProxyFactoryBase : IComProxyFactory
     /// <param name="parentObject">親の COM オブジェクト（親子関係を管理するため）</param>
     /// <returns>対応する型の `ComDispatchProxy<T>` インスタンス、または `comObject` そのまま</returns>
     /// <exception cref="ArgumentNullException">`comObject` が `null` の場合</exception>
-    public object? CreateProxyByFactoryFunction(object comObject, object parentObject)
+    public object CreateProxyByFactoryFunction(object comObject, object parentObject)
     {
+        ArgumentNullException.ThrowIfNull(comObject);
+        ArgumentNullException.ThrowIfNull(parentObject);
+
         // 1.  `factoryFunctionDictionary` に登録されている型リストを順にチェック。
         foreach (var (type, factoryFunction) in this._factoryFunctionDictionary)
         {
