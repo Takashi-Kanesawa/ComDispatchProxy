@@ -44,7 +44,18 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
     }
     public IComProxyFactory ProxyFactory => this._proxyFactory;
 
-    object? IComDispatchProxy.RawRcw => (this.IsDisposed || this._session.IsDisposed) ? null : this._rcw;
+    object? IComDispatchProxy.RawRcw
+    {
+        get
+        {
+            if (this.IsDisposed || this._session.IsDisposed)
+            {
+                throw new ObjectDisposedException(this._objectName);
+            }
+
+            return this._rcw;
+        }
+    }
 
     string IComDispatchProxy.ComObjectName => this._objectName;
     #endregion
@@ -251,12 +262,7 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
             {
                 if (args[i] is IComDispatchProxy proxy)
                 {
-                    var raw = proxy.RawRcw;
-                    if (raw == null)
-                    {
-                        throw new ObjectDisposedException(proxy.ComObjectName);
-                    }
-                    args[i] = raw;
+                    args[i] = proxy.RawRcw;
                 }
             }
         }
