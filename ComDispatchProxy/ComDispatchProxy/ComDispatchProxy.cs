@@ -199,6 +199,15 @@ public class ComDispatchProxy<T> : DispatchProxy, IComDispatchProxy where T : cl
                 return null;
             }
 
+            // foreach 対策：列挙子(IEnumerator)は Current が Invoke を通らないことがあるためラップする
+            if (result is System.Collections.IEnumerator ie)
+            {
+                return new ComEnumeratorWrapper(
+                    ie,
+                    parent: (IComDispatchProxy)this,
+                    ctxBase: $"{_objectName}.{methodInfo.Name}");
+            }
+
             // 方針：戻り値COMのみ Track（out/ref・COM配列は無視）
             if (Marshal.IsComObject(result))
             {

@@ -60,44 +60,25 @@ internal sealed class ComProxySession : IDisposable
         if (rcw is null) return false;
         if (!Marshal.IsComObject(rcw)) return false;
 
-        if (_trackedRcws.Add(rcw))
+        if (TryAddTrackedRcw(rcw))
         {
             _trackOrder.Add(rcw);
-            string? stack = null;
-            if (ComProxyLogConfig.Enabled && ComProxyLogConfig.CaptureStackTrace)
-            {
-                stack = FilterStackTrace(Environment.StackTrace); // ★ここだけが高コスト
-            }
-            var origin = new OriginInfo(context, stack);
-            this._originByRcw[rcw] = origin;
 
-            if (ComProxyLogConfig.Enabled)
-            {
-                if (origin.StackTrace is { Length: > 0 })
-                    ComProxyLog.Write($"[TRACK #{_trackOrder.Count - 1}] ctx={context} rcwHash={RuntimeHelpers.GetHashCode(rcw)}\n{origin.StackTrace}");
-                else
-                    ComProxyLog.Write($"[TRACK #{_trackOrder.Count - 1}] ctx={context} rcwHash={RuntimeHelpers.GetHashCode(rcw)}");
-            }
+            var origin = CreateOrigin(context);
+            _originByRcw[rcw] = origin;
 
+            LogTrack(rcw, context, origin);
             return true;
         }
 
-        // duplicate: 参照カウント増分をその場で相殺（Release 1回）
         _originByRcw.TryGetValue(rcw, out var first);
-#pragma warning disable CA1416 // OS互換性警告を無視
-        int remain = Marshal.ReleaseComObject(rcw);
+
+#pragma warning disable CA1416
+        int remain = Marshal.ReleaseComObject(rcw); // duplicate分を相殺（1回だけ）
 #pragma warning restore CA1416
 
-        if (ComProxyLogConfig.Enabled)
-        {
-            if (first?.StackTrace is { Length: > 0 } st)
-                ComProxyLog.Write($"[DUP-RELEASE] remain={remain} nowCtx={context} firstCtx={first?.Context ?? "<missing>"} rcwHash={RuntimeHelpers.GetHashCode(rcw)}\n{st}");
-            else
-                ComProxyLog.Write($"[DUP-RELEASE] remain={remain} nowCtx={context} firstCtx={first?.Context ?? "<missing>"} rcwHash={RuntimeHelpers.GetHashCode(rcw)}");
-        }
+        LogDupRelease(rcw, context, first, remain);
 
-        // remain==0 は「想定より落ちた」シグナル。ここは fail-fast で安全側に倒す。
-        // （必要なら後で設定で抑制できるようにする）
         if (remain == 0)
             throw new InvalidOperationException(
                 $"Duplicate RCW release reached 0. nowCtx={context}, firstCtx={first?.Context ?? "<missing>"}");
@@ -105,6 +86,43 @@ internal sealed class ComProxySession : IDisposable
         return false;
     }
 
+    private bool TryAddTrackedRcw(object rcw) => _trackedRcws.Add(rcw);
+
+    private OriginInfo CreateOrigin(string context)
+    {
+        string? stack = null;
+        if (ComProxyLogConfig.Enabled && ComProxyLogConfig.CaptureStackTrace)
+        {
+            stack = FilterStackTrace(Environment.StackTrace); // ★高コスト
+        }
+        return new OriginInfo(context, stack);
+    }
+
+    private void LogTrack(object rcw, string context, OriginInfo origin)
+    {
+        if (!ComProxyLogConfig.Enabled) return;
+
+        var hash = RuntimeHelpers.GetHashCode(rcw);
+        var index = _trackOrder.Count - 1;
+
+        if (origin.StackTrace is { Length: > 0 } st)
+            ComProxyLog.Write($"[TRACK #{index}] ctx={context} rcwHash={hash}\n{st}");
+        else
+            ComProxyLog.Write($"[TRACK #{index}] ctx={context} rcwHash={hash}");
+    }
+
+    private void LogDupRelease(object rcw, string nowCtx, OriginInfo? first, int remain)
+    {
+        if (!ComProxyLogConfig.Enabled) return;
+
+        var hash = RuntimeHelpers.GetHashCode(rcw);
+        var firstCtx = first?.Context ?? "<missing>";
+
+        if (first?.StackTrace is { Length: > 0 } st)
+            ComProxyLog.Write($"[DUP-RELEASE] remain={remain} nowCtx={nowCtx} firstCtx={firstCtx} rcwHash={hash}\n{st}");
+        else
+            ComProxyLog.Write($"[DUP-RELEASE] remain={remain} nowCtx={nowCtx} firstCtx={firstCtx} rcwHash={hash}");
+    }
 
     public void Dispose()
     {

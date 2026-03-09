@@ -8,7 +8,7 @@
     <!-- パッケージのID（名前） -->
     <PackageId>ComDispatchProxy</PackageId>
 
-    <Version>0.1.1</Version>
+    <Version>0.1.2</Version>
 
     <Authors>T.Kanesawa</Authors>
     <Description>Base of COM DispatchProxy wrapper </Description>

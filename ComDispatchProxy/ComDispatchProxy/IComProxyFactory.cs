@@ -11,5 +11,5 @@ public interface IComProxyFactory
     /// <param name="comObject">プロキシを作成する COM オブジェクト</param>
     /// <param name="parentObject">親の COM オブジェクト</param>
     /// <returns>対応する型のプロキシインスタンス、または `comObject` そのまま</returns>
-    object? CreateProxyByFactoryFunction(object comObject, object parentObject);
+    object CreateProxyByFactoryFunction(object comObject, object parentObject);
 }

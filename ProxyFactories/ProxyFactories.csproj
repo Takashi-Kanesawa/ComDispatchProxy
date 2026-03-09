@@ -7,7 +7,7 @@
     <!-- パッケージのID（名前） -->
     <PackageId>ComDispatchProxy.Excel</PackageId>
 
-    <Version>0.1.1</Version>
+    <Version>0.1.2</Version>
 
     <Authors>T.Kanesawa</Authors>
     <Description>Excel Interop DispatchProxy wrapper (depends on ComDispatchProxy)</Description>
@@ -39,6 +39,6 @@
   </ItemGroup>
   <!-- Release: パッケージ依存を明示 -->
   <ItemGroup Condition="'$(Configuration)' == 'Release'">
-    <PackageReference Include="ComDispatchProxy" Version="0.1.1" />
+    <PackageReference Include="ComDispatchProxy" Version="0.1.2" />
   </ItemGroup> 
 </Project>
